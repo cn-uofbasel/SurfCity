@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 
 long_description = \
 '''SurfCity is a Python client for Secure Scuttlebut. The default
@@ -17,8 +17,7 @@ setup_info = dict(
     version=VERSION,
     author='cft',
     author_email='christian.tschudin@unibas.ch',
-    url='https://x',
-    download_url='https://y',
+    url='https://github.com/cn-uofbasel/SurfCity',
     description='A family of Python clients for Secure Scuttlebutt',
     long_description=long_description,
     license='MIT',
