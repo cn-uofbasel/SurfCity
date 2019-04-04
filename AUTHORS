@@ -1,0 +1,12 @@
+# AUTHORS
+
+surfcity           copyright (c) <christian.tschudin@unibas.ch>
+pyssb              copyright (c) Pedro Ferreira <pedro@dete.st>
+PySecretHandshake  copyright (c) Pedro Ferreira <pedro@dete.st>
+
+This repo:
+  https://github.com/cn-uofbasel/surfcity
+
+includes code from:
+  https://github.com/pferreir/pyssb
+  https://github.com/pferreir/PySecretHandshake
