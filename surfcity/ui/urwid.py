@@ -24,7 +24,8 @@ ui_descr = " (urwid ui, v2019-04-02)"
 
 the_loop = None # urwid loop
 
-urwid_back = None
+back_stack = []
+
 urwid_counter = None
 urwid_title = None
 urwid_footer = None
@@ -59,9 +60,6 @@ key_quit      = ['q', 'Q']
 draft_text = None
 
 vacuum_intervall = 60*60*24*7 # once a week
-
-# ----------------------------------------------------------------------
-
 
 # ----------------------------------------------------------------------
 
@@ -112,7 +110,7 @@ def activate_help(old_focus = None):
     urwid_helpList.set_focus(0)
     urwid_frame.contents['body'] = (urwid_helpList, None)
     output_log("")
-    urwid_back.on(lambda : set_frame(old_focus))
+    back_stack.append(old_focus)
 
 def activate_user(old_focus = None):
     global urwid_userList
@@ -120,7 +118,7 @@ def activate_user(old_focus = None):
     urwid_userList.set_focus(0)
     urwid_frame.contents['body'] = (urwid_userList, None)
     output_log("")
-    urwid_back.on(lambda : set_frame(old_focus))
+    back_stack.append(old_focus)
 
 # ----------------------------------------------------------------------
 
@@ -305,8 +303,26 @@ def output_log(txt='', end=None, flush=None):
     urwid_footer.set_text(txt)
     pass
 
-def on_unhandled_input(key):
-    output_log(f"unhandled event: {str(key)}")
+def on_unhandled_input(ev):
+    screen_size = urwid.raw_display.Screen().get_cols_rows()
+
+    if type(ev) == tuple and ev[0] == 'mouse press':
+        if ev[3] < 3:
+            if screen_size[0] - ev[2] < 16:
+                # output_log('refresh!')
+                urwid_frame.keypress(screen_size, '!')
+            else:
+                if len(back_stack) > 0:
+                    set_frame(back_stack[-1])
+                elif urwid_frame.contents['body'][0] in [urwid_threadList,
+                                                         urwid_convoList]:
+                    urwid_frame.keypress(screen_size, 'p')
+                # else: output_log('?? empty back_stack ??')
+        elif ev[3] == screen_size[1] - 1 and screen_size[0] - ev[2] < 16:
+            if type(urwid_frame.contents['body']) != HelpListBox:
+                activate_help(urwid_frame.contents['body'][0])
+        return
+    output_log(f"unhandled event: {str(ev)}")
 
 def output_counter():
     urwid_counter.set_text(f"FWD={app.new_forw} BWD={app.new_back} ")
@@ -467,7 +483,7 @@ class HelpListBox(urwid.ListBox):
 
     def __init__(self, goback, lst=[]):
         self.goback = goback
-        self.title = "Help Text"
+        self.title = "Help Text\n"
         urwid_title.set_text(self.title)
         lst = [urwid.Text('v--- H E L P ---v', 'center')]
         for h in help:
@@ -524,7 +540,7 @@ class UserListBox(urwid.ListBox):
 
     def __init__(self, goback, lst=[]):
         self.goback = goback
-        self.title = "User Directory"
+        self.title = "User Directory\n"
 
         urwid_title.set_text(self.title)
         lst = [urwid.Text('v--- U S E R S ---v', 'center')]
@@ -654,7 +670,7 @@ class PrivateConvoListBox(urwid.ListBox):
 
     def __init__(self, secr, lst=[]):
         self.secr = secr
-        self.title = "PRIVATE conversations:"
+        self.title = "PRIVATE conversations"
         urwid_title.set_text(self.title)
         body = urwid.SimpleFocusListWalker(lst)
         super(PrivateConvoListBox, self).__init__(body)
@@ -711,7 +727,7 @@ class PrivateConvoListBox(urwid.ListBox):
             return key
         self.focus.star.set_text('')
         self.focus.count.set_text('')
-        urwid_back.on(lambda : set_frame(urwid_convoList))
+        back_stack.append(urwid_convoList)
         for t in self.focus.convo['threads']:
             app.the_db.update_thread_lastread(t)
         lst = [urwid.Text('---oldest---', 'center')]
@@ -742,7 +758,7 @@ class PrivateConvoListBox(urwid.ListBox):
         ## if len(nms) == 0:
         ##     nms = [app.feed2name(secr.id)]
         # title = f"Private conversation with <{', '.join(nms)[:50]}>:"
-        title = f"Private conversation with {self.focus.convo_title[:50]}:"
+        title = "Private conversation\n" + f"with {self.focus.convo_title[:50]}"
 
         urwid_privMsgList = PrivateMessageListBox(self.secr, urwid_convoList,
                                                   title, lst,
@@ -901,7 +917,8 @@ class MessageListBox(urwid.ListBox):
         return True
 
 def set_frame(goback):
-    urwid_back.off()
+    global back_stack
+    back_stack.pop()
     urwid_frame.contents['body'] = (goback, None)
     urwid_title.set_text(goback.title)
             
@@ -913,9 +930,9 @@ class ThreadListBox(urwid.ListBox):
 
     def __init__(self, secr, lst=[], show_extended_network=False):
         self.secr = secr
-        self.title = "PUBLIC chats (extended network):" \
+        self.title = "PUBLIC chats (extended network)" \
                      if show_extended_network else \
-                        "PUBLIC chats (with or from people I follow):"
+                        "PUBLIC chats (with or from people I follow)"
         urwid_title.set_text(self.title)
         body = urwid.SimpleFocusListWalker(lst)
         super(ThreadListBox, self).__init__(body)
@@ -968,7 +985,7 @@ class ThreadListBox(urwid.ListBox):
 
         self.focus.star.set_text('')
         self.focus.count.set_text('')
-        urwid_back.on(lambda : set_frame(urwid_threadList))
+        back_stack.append(urwid_threadList)
         app.the_db.update_thread_lastread(self.focus.key)
         lst = [urwid.Text('---oldest---', 'center')]
         if len(self.focus.msgs) > 0 and 'root' in self.focus.msgs[0]['content']:
@@ -1199,37 +1216,6 @@ class ConfirmTextDialog(urwid.Overlay):
 
 # ---------------------------------------------------------------------------
 
-class BackButton(urwid.Widget):
-
-    _selectable = False
-    
-    def __init__(self):
-        super(BackButton, self).__init__()
-        self.visible = False
-
-    def on(self, callback, state=True):
-        self.cb = callback
-        self.visible = state
-        self._invalidate()
-
-    def off(self):
-        self.on(None, False)
-
-    def render(self, size, focus=False):
-        if self.visible: return urwid.TextCanvas([b'< ', b'< '], maxcol=2)
-        return urwid.TextCanvas([b'  '], maxcol=2)
-
-    def rows(self, size, Focus=False):
-        return 2 if self.visible else 1
-
-    def mouse_event(self, size, event, button, x, y, focus):
-        if self.visible:
-            self.cb()
-            self.off()
-        return True
-
-# ---------------------------------------------------------------------------
-
 def launch(app_core, secr, args):
     global app, the_loop
     global urwid_counter, urwid_back, urwid_title, urwid_header
@@ -1292,13 +1278,13 @@ def launch(app_core, secr, args):
     screen.register_palette(palette)
 
     urwid_counter = urwid.Text('FWD=0 BWD=0 ', 'right', wrap='clip')
-    urwid_back = BackButton()
+    # urwid_back = BackButton()
     urwid_title = urwid.Text('PUBLIC chats:', wrap='clip')
     urwid_header = urwid.Pile([
             urwid.Columns([('pack',urwid.Text(f"SurfCity - a log-less SSB client{ui_descr}", wrap='clip')),
                            urwid_counter
             ]),
-        urwid.Columns([(2,urwid_back),urwid_title])
+        urwid_title
         
     ])
     urwid_hdrmap = urwid.AttrMap(urwid_header, 'header')
