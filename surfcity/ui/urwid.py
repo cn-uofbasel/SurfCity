@@ -20,7 +20,7 @@ import surfcity.app.net  as net
 import surfcity.app.db   as db
 
 logger = logging.getLogger('surfcity_ui_urwid')
-ui_descr = " (urwid ui, v2019-04-02)"
+ui_descr = " (urwid ui, v2019-04-06)"
 
 the_loop = None # urwid loop
 
@@ -319,7 +319,7 @@ def on_unhandled_input(ev):
                     urwid_frame.keypress(screen_size, 'p')
                 # else: output_log('?? empty back_stack ??')
         elif ev[3] == screen_size[1] - 1 and screen_size[0] - ev[2] < 16:
-            if type(urwid_frame.contents['body']) != HelpListBox:
+            if type(urwid_frame.contents['body'][0]) != HelpListBox:
                 activate_help(urwid_frame.contents['body'][0])
         return
     output_log(f"unhandled event: {str(ev)}")
@@ -356,6 +356,45 @@ def smooth_scroll(obj, size, key):
             obj.shift_focus(size, size[1]-10)
         return True
     return False
+
+def list_mouse_event(obj, size, event, button, col, row, focus):
+    if mouse_scroll(obj, size, button) == True:
+        return True
+    if event == 'mouse press':
+        obj._mouse_down = (col, row)
+        return True
+    if event != 'mouse release' or (col,row) != obj._mouse_down:
+        obj._mouse_down = (-1,-1)
+        return True
+
+    (maxcol, maxrow) = size
+    middle, top, bottom = obj.calculate_visible((maxcol, maxrow),
+                                                 focus=True)
+    if middle is None:
+        return False
+
+    _ignore, focus_widget, focus_pos, focus_rows, cursor = middle
+    trim_top, fill_above = top
+    _ignore, fill_below = bottom
+
+    fill_above.reverse() # fill_above is in bottom-up order
+    w_list = ( fill_above +
+               [ (focus_widget, focus_pos, focus_rows) ] +
+               fill_below )
+
+    wrow = -trim_top
+    for w, w_pos, w_rows in w_list:
+        if wrow + w_rows > row:
+            break
+        wrow += w_rows
+    else:
+        return False
+
+    obj.set_focus(w_pos)
+    obj.keypress(size, 'enter')
+
+    return True
+
     
 # ----------------------------------------------------------------------
 
@@ -395,6 +434,19 @@ r                      reply in a thread
 down/up-arrow, j/k     move upwards/downwards in the list
 page-down, page-up     scroll through the list''',
 
+    '''Mouse support:
+
+The mouse can be used to scroll up and down in the list and text
+panels. In the list of public threads, as well as the list of private
+conversations, entries can be clicked on in order to expand them.
+
+Clicking in the UPPER LEFT corner is equivalent to either 'back' or
+for toggling between public threads and private conversations.
+
+Clicking in the UPPER RIGHT corner triggers a refresh.
+
+Clicking in the LOWER RIGHT corner triggers the help screen.''',
+    
     '''About SurfCity
 
 Secure Scuttlebutt (SSB) brings to you a deluge of information,
@@ -474,7 +526,15 @@ does not come with a huge storage requirement.
 
 -noextend       "do not scan forwards": prevents SurfCity from
                 probing for new messages that extend the peers'
-                logs.'''
+                logs.
+
+This user interface supports four different color modes:
+
+-ui urwid       dark mode (default)
+-ui urwid_light light mode
+-ui urwid_amber monochrome, using a warm amber color on black
+-ui urwid_green monochrome, using classic green on black
+-ui urwid_mono  monochrome, using the terminal's default colors'''
 ]
 
 class HelpListBox(urwid.ListBox):
@@ -766,9 +826,10 @@ class PrivateConvoListBox(urwid.ListBox):
         urwid_privMsgList.set_focus(len(lst)-1)
         urwid_frame.contents['body'] = (urwid_privMsgList, None)
 
-    def mouse_event(self, size, event, button, x, y, focus):
-        mouse_scroll(self, size, button)
-        return True
+    def mouse_event(self, size, event, button, col, row, focus):
+        return list_mouse_event(self, size, event, button, col, row, focus)
+        # mouse_scroll(self, size, button)
+        # return True
 
 class PrivateMessageListBox(urwid.ListBox):
     # private convo messages
@@ -827,7 +888,7 @@ class PrivateMessageListBox(urwid.ListBox):
         # urwid_title.set_text(self.goback.title)
         # urwid_frame.contents['body'] = (self.goback, None)
     
-    def mouse_event(self, size, event, button, x, y, focus):
+    def mouse_event(self, size, event, button, col, row, focus):
         mouse_scroll(self, size, button)
         return True
 
@@ -1020,6 +1081,8 @@ class ThreadListBox(urwid.ListBox):
         urwid_frame.contents['body'] = (urwid_msgList, None)
 
     def mouse_event(self, size, event, button, col, row, focus):
+        return list_mouse_event(self, size, event, button, col, row, focus)
+
         if mouse_scroll(self, size, button) == True:
             return True
         if event == 'mouse press':
@@ -1224,6 +1287,28 @@ def launch(app_core, secr, args):
     app = app_core
     print(ui_descr)
 
+    amber_palette = [
+            ('fill', 'dark gray', 'black', 'default', '#d80', '#000'),
+            ('even', 'black', 'dark gray', 'standout', '#000', '#d80'),
+            ('evenBold', 'black,underline', 'dark gray', 'standout,underline', '#000,underline', '#d80'),
+            ('odd', 'dark gray', 'black', 'default', '#d80', '#000'),
+            ('oddBold', 'dark gray,underline', 'black', 'underline', '#d80,underline', '#000'),
+            ('header', 'black', 'light gray', 'standout', '#000', '#fa0'),
+            ('selected', 'black', 'light gray', 'standout', '#000', '#fa0'),
+            ('selectedPrivate', 'black', 'light gray', 'standout', '#000', '#fa0'),
+            ('cypherlink', 'dark red,underline', 'black', 'standout', '#fa0,underline', '#000')
+    ]
+    green_palette = [
+            ('fill', 'dark green', 'black'),
+            ('even', 'black', 'dark green'),
+            ('evenBold', 'black,underline', 'dark green'),
+            ('odd', 'dark green', 'black'),
+            ('oddBold', 'dark green,underline', 'black'),
+            ('header', 'black', 'light green'),
+            ('selected', 'black', 'light green'),
+            ('selectedPrivate', 'black', 'light green'),
+            ('cypherlink', 'dark green,underline', 'black')
+    ]
     mono_palette = [
             ('fill', 'default', 'default'),
             ('even', 'standout', 'default'),
@@ -1233,17 +1318,6 @@ def launch(app_core, secr, args):
             ('header', 'standout', 'default'),
             ('selected', 'standout', 'default'),
             ('selectedPrivate', 'standout', 'default'),
-            ('cypherlink', 'standout,underline', 'default')
-    ]
-    amber_palette = [
-            ('fill', 'white', 'black', 'default', '#fa0', '#000'),
-            ('even', 'black', 'white', 'standout', '#000', '#fa0'),
-            ('evenBold', 'black,underline', 'white', 'standout,underline', '#000,underline', '#fa0'),
-            ('odd', 'white', 'black', 'default', '#fa0', '#000'),
-            ('oddBold', 'white,underline', 'black', 'underline', '#fa0,underline', '#000'),
-            ('header', 'black', 'white', 'standout', '#000', '#fa0'),
-            ('selected', 'black', 'white', 'standout', '#000', '#fa0'),
-            ('selectedPrivate', 'black', 'white', 'standout', '#000', '#fa0'),
             ('cypherlink', 'standout,underline', 'default')
     ]
     light_palette = [
@@ -1269,12 +1343,12 @@ def launch(app_core, secr, args):
             ('cypherlink', 'light blue', 'default', 'underline')
     ]
     palette = { 'mono':  mono_palette,
+                'green': green_palette,
                 'amber': amber_palette,
                 'light': light_palette,
                 'dark':  dark_palette } [args.style]
     screen = urwid.raw_display.Screen()
     screen.set_terminal_properties(256)
-    # screen.set_terminal_properties(screen.colors)
     screen.register_palette(palette)
 
     urwid_counter = urwid.Text('FWD=0 BWD=0 ', 'right', wrap='clip')
