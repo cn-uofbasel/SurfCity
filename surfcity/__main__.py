@@ -49,10 +49,11 @@ def main(args=None):
     paa('-pub', type=str, metavar="host:port:pubID or 'any'",
         default='127.0.0.1',
         help="access pub (default: 'localhost:8008:<yourID>')")
-    paa('-ui', choices=['urwid', 'urwid_light', 'urwid_mono',
-                        'urwid_amber', 'tty', 'kivy'],
+    paa('-ui', choices=['urwid', 'urwid_light',
+                        'urwid_amber', 'urwid_green', 'urwid_mono',
+                        'tty', 'kivy'],
         nargs='?', metavar="USERINTERFACE", default='urwid',
-        help='one of: urwid, tty, kivy (default: urwid)')
+        help='one of: urwid, tty, kivy, urwid_light, urwid_amber, urwid_green, urwid_mono (default: urwid)')
 
     args = parser.parse_args()
 
@@ -79,12 +80,8 @@ def main(args=None):
 
     if 'urwid' in args.ui:
         import surfcity.ui.urwid as ui
-        if args.ui == 'urwid_mono':
-            setattr(args, 'style', 'mono')
-        elif args.ui == 'urwid_amber':
-            setattr(args, 'style', 'amber')
-        elif args.ui == 'urwid_light':
-            setattr(args, 'style', 'light')
+        if '_' in args.ui:
+            setattr(args, 'style', args.ui[args.ui.index('_') + 1:])
         else:
             setattr(args, 'style', 'dark')
     elif args.ui == 'tty':

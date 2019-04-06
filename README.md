@@ -61,7 +61,17 @@ TTY (printer console):
 surfcity -ui tty
 ```
 
-If you wish to connect to a remote server, add the pub's coordinate as follows (example):
+More color choices:
+```
+surfcity -ui urwid          # default (dark mode)
+surfcity -ui urwid_light    # works for 16-color terminals
+surfcity -ui urwid_amber    # warm amber on black
+surfcity -ui urwid_green    # classic green on black
+surfcity -ui urwid_mono     # monochrome, using the terminal's default colors
+```
+
+
+If you wish to connect to a remote server, add the pub's coordinates as follows (example):
 ```
 surfcity -pub ssb.organicdesign.pub:8008:@XgC5wDA2EW++ufaDrjRDHXA7Dyd1ce5bTenCm2u6PZU=.ed25519
 ```
@@ -74,13 +84,19 @@ of this long name - by this you state that you trust the pub.
 
 ![four screenshots from the URWID-based TUI for SSB](img/urwid-4up.png)
 
-URWID-based terminal user interface
+Four screenshots of the default URWID-based TUI (dark mode)
 
 ---
 
-![two screenshots, showing SSB posts on a amber CRT](img/tty-amber.png)
+![four color modes for the URWID-based SSB-TUI](img/urwid-modes.png)
 
-TTY-based user interface
+More color modes of the URWID TUI: light, amber, green, monochromatic
+
+---
+
+![two screenshots, showing SSB posts in tty mode](img/tty-amber.png)
+
+TTY user interface
 
 ---
 
