@@ -5,11 +5,11 @@ from setuptools import setup, find_packages
 VERSION = '0.1.2'
 
 long_description = \
-'''SurfCity is a Python client for Secure Scuttlebut. The default
-terminal UI is using the colorful Urwid widgets. There is also a
-pure TTY version. The Kivy version of the UI is included to show that
-the internal APIs can also be used also with these widgets but is
-functionally incomplete.'''
+'''SurfCity is a family of Python clients for Secure Scuttlebut. The
+default terminal UI is using the colorful Urwid widgets. There is also
+a pure TTY version. The Kivy version of the UI is included to show
+that the internal APIs can also be used also with full GUI widgets but
+is functionally incomplete.'''
 
 setup_info = dict(
     # Metadata

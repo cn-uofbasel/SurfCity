@@ -24,6 +24,7 @@ ui_descr = " (urwid ui, v2019-04-02)"
 
 the_loop = None # urwid loop
 
+urwid_back = None
 urwid_counter = None
 urwid_title = None
 urwid_footer = None
@@ -111,6 +112,7 @@ def activate_help(old_focus = None):
     urwid_helpList.set_focus(0)
     urwid_frame.contents['body'] = (urwid_helpList, None)
     output_log("")
+    urwid_back.on(lambda : set_frame(old_focus))
 
 def activate_user(old_focus = None):
     global urwid_userList
@@ -118,6 +120,7 @@ def activate_user(old_focus = None):
     urwid_userList.set_focus(0)
     urwid_frame.contents['body'] = (urwid_userList, None)
     output_log("")
+    urwid_back.on(lambda : set_frame(old_focus))
 
 # ----------------------------------------------------------------------
 
@@ -173,6 +176,7 @@ async def main(secr, args):
     except Exception as e:
         logger.info(f"*** {str(e)}")
         logger.info(traceback.format_exc())
+
     try:
         host = args.pub.split(':')
         port = 8008 if len(host) < 2 else int(host[1])
@@ -312,9 +316,10 @@ def output_counter():
 
 def mouse_scroll(obj, size, button):
     if button == 4:
-        obj.keypress(size, 'up')
+        return obj.keypress(size, 'up')
     if button == 5:
-        obj.keypress(size, 'down')
+        return obj.keypress(size, 'down')
+    return False
 
 def smooth_scroll(obj, size, key):
     lw = obj.body
@@ -466,7 +471,7 @@ class HelpListBox(urwid.ListBox):
         urwid_title.set_text(self.title)
         lst = [urwid.Text('v--- H E L P ---v', 'center')]
         for h in help:
-            t = urwid.AttrMap(urwid.Text(h), 'odd')
+            t = urwid.AttrMap(urwid.Text(h), 'even')
             p = urwid.Pile([urwid.Text(''),t,urwid.Text('')])
             lst.append(urwid.Padding(p, left=2, right=2))
         lst.append(urwid.Text('^--- H E L P ---^', 'center'))
@@ -484,11 +489,13 @@ class HelpListBox(urwid.ListBox):
             return self.keypress(size, 'page up')
         if not key in arrow_left:
             return key
-        urwid_title.set_text(self.goback.title)
-        urwid_frame.contents['body'] = (self.goback, None)
+        set_frame(self.goback)
+        # urwid_title.set_text(self.goback.title)
+        # urwid_frame.contents['body'] = (self.goback, None)
 
     def mouse_event(self, size, event, button, x, y, focus):
         mouse_scroll(self, size, button)
+        return True
 
 # ----------------------------------------------------------------------
 
@@ -511,7 +518,7 @@ class UserListBox(urwid.ListBox):
         return f"{fr}{(n+10*' ')[:10]} {feedID}  {prog}"
 
     def _lines2widget(self, lns):
-        t = urwid.AttrMap(urwid.Text('\n'.join(lns)), 'odd')
+        t = urwid.AttrMap(urwid.Text('\n'.join(lns)), 'even')
         p = urwid.Pile([urwid.Text(''),t,urwid.Text('')])
         return urwid.Padding(p, left=2, right=2)
 
@@ -607,11 +614,13 @@ class UserListBox(urwid.ListBox):
             return activate_help(urwid_userList)
         if not key in arrow_left:
             return key
-        urwid_title.set_text(self.goback.title)
-        urwid_frame.contents['body'] = (self.goback, None)
+        set_frame(self.goback)
+        # urwid_title.set_text(self.goback.title)
+        # urwid_frame.contents['body'] = (self.goback, None)
 
     def mouse_event(self, size, event, button, x, y, focus):
         mouse_scroll(self, size, button)
+        return True
 
 # ----------------------------------------------------------------------
 
@@ -627,7 +636,7 @@ class ConvoEntry(urwid.AttrMap):
         self.count = urwid.Text(('selected', f"({new_count} new)" \
                                  if new_count > 0 else ""), 'right')
         self.convo_title = txt[0][1]
-        lines = [ urwid.Text(f"{self.convo_title[:75]} ({len(msgs)} messages)") ]
+        lines = [ urwid.Text((attr+'Bold', f"{self.convo_title[:75]} ({len(msgs)} messages)")) ]
         for ln in txt[1:]:
             lines.append(urwid.Columns([
                 (12, urwid.Text(ln[1][:10]+'  ', 'left', wrap='clip')),
@@ -702,6 +711,7 @@ class PrivateConvoListBox(urwid.ListBox):
             return key
         self.focus.star.set_text('')
         self.focus.count.set_text('')
+        urwid_back.on(lambda : set_frame(urwid_convoList))
         for t in self.focus.convo['threads']:
             app.the_db.update_thread_lastread(t)
         lst = [urwid.Text('---oldest---', 'center')]
@@ -717,7 +727,7 @@ class PrivateConvoListBox(urwid.ListBox):
                                (13, urwid.Text(app.utc2txt(m['timestamp'])))])
             t = m['content']['text']
             t = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', t)
-            t = urwid.AttrMap(urwid.Text(t), 'odd')
+            t = urwid.AttrMap(urwid.Text(t), 'even')
             r = urwid.Text(m['key'], 'right')
             p = urwid.Pile([urwid.Text(''),n,t,r,urwid.Text('')])
             lst.append(urwid.Padding(p, left=2, right=2))
@@ -742,6 +752,7 @@ class PrivateConvoListBox(urwid.ListBox):
 
     def mouse_event(self, size, event, button, x, y, focus):
         mouse_scroll(self, size, button)
+        return True
 
 class PrivateMessageListBox(urwid.ListBox):
     # private convo messages
@@ -796,11 +807,13 @@ class PrivateMessageListBox(urwid.ListBox):
         
         if not key in arrow_left:
             return key
-        urwid_title.set_text(self.goback.title)
-        urwid_frame.contents['body'] = (self.goback, None)
+        set_frame(self.goback)
+        # urwid_title.set_text(self.goback.title)
+        # urwid_frame.contents['body'] = (self.goback, None)
     
     def mouse_event(self, size, event, button, x, y, focus):
         mouse_scroll(self, size, button)
+        return True
 
 # ----------------------------------------------------------------------
 
@@ -828,6 +841,10 @@ class ThreadEntry(urwid.AttrMap):
         cols = urwid.Columns([(2,self.star),pile])
         super(ThreadEntry, self).__init__(cols, None, focus_map='selected')
 
+#    def mouse_event(self, size, event, button, x, y, focus):
+#        output_log('hello 1')
+#        return True
+
 class MessageListBox(urwid.ListBox):
     # public thread's messages
 
@@ -837,7 +854,7 @@ class MessageListBox(urwid.ListBox):
         self.secr = secr
         self.goback = goback
         self.title = title
-        urwid_title.set_text(title)
+        urwid_title.set_text(title[:screen_size[0]-1])
         self.root = root
         self.branch = branch
         body = urwid.SimpleFocusListWalker(lst)
@@ -875,16 +892,24 @@ class MessageListBox(urwid.ListBox):
         if not key in arrow_left:
             return key
 
-        urwid_title.set_text(self.goback.title)
-        urwid_frame.contents['body'] = (self.goback, None)
+        set_frame(self.goback)
+        # urwid_title.set_text(self.goback.title)
+        # urwid_frame.contents['body'] = (self.goback, None)
 
-    def mouse_event(self, size, event, button, x, y, focus):
+    def mouse_event(self, size, event, button, col, row, focus):
         mouse_scroll(self, size, button)
+        return True
 
+def set_frame(goback):
+    urwid_back.off()
+    urwid_frame.contents['body'] = (goback, None)
+    urwid_title.set_text(goback.title)
+            
 class ThreadListBox(urwid.ListBox):
     # list of public threads
 
     _selectable = True
+    _mouse_down = (-1,-1)
 
     def __init__(self, secr, lst=[], show_extended_network=False):
         self.secr = secr
@@ -896,7 +921,7 @@ class ThreadListBox(urwid.ListBox):
         super(ThreadListBox, self).__init__(body)
 
     def keypress(self, size, key):
-        global urwid_msgList, show_extended_network
+        global urwid_back, urwid_msgList, show_extended_network
         global refresh_focus, refresh_focus_pos # refresh_requested,
         global screen_size
         screen_size = (size[0], size[1]+3)
@@ -943,6 +968,7 @@ class ThreadListBox(urwid.ListBox):
 
         self.focus.star.set_text('')
         self.focus.count.set_text('')
+        urwid_back.on(lambda : set_frame(urwid_threadList))
         app.the_db.update_thread_lastread(self.focus.key)
         lst = [urwid.Text('---oldest---', 'center')]
         if len(self.focus.msgs) > 0 and 'root' in self.focus.msgs[0]['content']:
@@ -959,7 +985,7 @@ class ThreadListBox(urwid.ListBox):
                                (13, urwid.Text(app.utc2txt(m['timestamp'])))])
             t = m['content']['text']
             t = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', t)
-            t = urwid.AttrMap(urwid.Text(t), 'odd')
+            t = urwid.AttrMap(urwid.Text(t), 'even')
             r = urwid.Text(m['key'], 'right')
             p = urwid.Pile([urwid.Text(''),n,t,r,urwid.Text('')])
             lst.append(urwid.Padding(p, left=2, right=2))
@@ -967,17 +993,53 @@ class ThreadListBox(urwid.ListBox):
 
         title = app.the_db.get_thread_title(self.focus.key)
         if title:
-            title = f"Public: '{app.text2synopsis(title)}'"
+            title = "Public:\n" + f"'{app.text2synopsis(title)}'"
         else:
-            title = "Public: <unknown first post>"
+            title = "Public:\n<unknown first post>"
 
         urwid_msgList = MessageListBox(self.secr, urwid_threadList, title, lst,
                                        root, branch)
         urwid_msgList.set_focus(len(lst)-1)
         urwid_frame.contents['body'] = (urwid_msgList, None)
 
-    def mouse_event(self, size, event, button, x, y, focus):
-        mouse_scroll(self, size, button)
+    def mouse_event(self, size, event, button, col, row, focus):
+        if mouse_scroll(self, size, button) == True:
+            return True
+        if event == 'mouse press':
+            self._mouse_down = (col, row)
+            return True
+        if event != 'mouse release' or (col,row) != self._mouse_down:
+            self._mouse_down = (-1,-1)
+            return True
+
+        (maxcol, maxrow) = size
+        middle, top, bottom = self.calculate_visible((maxcol, maxrow),
+            focus=True)
+        if middle is None:
+            return False
+
+        _ignore, focus_widget, focus_pos, focus_rows, cursor = middle
+        trim_top, fill_above = top
+        _ignore, fill_below = bottom
+
+        fill_above.reverse() # fill_above is in bottom-up order
+        w_list = ( fill_above +
+            [ (focus_widget, focus_pos, focus_rows) ] +
+            fill_below )
+
+        wrow = -trim_top
+        for w, w_pos, w_rows in w_list:
+            if wrow + w_rows > row:
+                break
+            wrow += w_rows
+        else:
+            return False
+
+        self.set_focus(w_pos)
+        self.keypress(size, 'enter')
+
+        return True
+        
 
 # ----------------------------------------------------------------------
 
@@ -1128,44 +1190,116 @@ class ConfirmTextDialog(urwid.Overlay):
         logger.info("send_callback")
         self.close()
         draft_text = None
-        app.the_db.get_config('draft_post', None)
+        app.the_db.set_config('draft_post', None)
         self.send_callback(str(self.body_text.get_text()[0]))
         
     def close(self):
         the_loop.widget = urwid_frame
         the_loop.draw_screen()
 
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+class BackButton(urwid.Widget):
+
+    _selectable = False
+    
+    def __init__(self):
+        super(BackButton, self).__init__()
+        self.visible = False
+
+    def on(self, callback, state=True):
+        self.cb = callback
+        self.visible = state
+        self._invalidate()
+
+    def off(self):
+        self.on(None, False)
+
+    def render(self, size, focus=False):
+        if self.visible: return urwid.TextCanvas([b'< ', b'< '], maxcol=2)
+        return urwid.TextCanvas([b'  '], maxcol=2)
+
+    def rows(self, size, Focus=False):
+        return 2 if self.visible else 1
+
+    def mouse_event(self, size, event, button, x, y, focus):
+        if self.visible:
+            self.cb()
+            self.off()
+        return True
+
+# ---------------------------------------------------------------------------
 
 def launch(app_core, secr, args):
     global app, the_loop
-    global urwid_counter, urwid_title, urwid_header
+    global urwid_counter, urwid_back, urwid_title, urwid_header
     global urwid_footer, urwid_threadList, urwid_convoList, urwid_frame
 
     app = app_core
     print(ui_descr)
 
-    palette = [
-            ('even', 'default', 'default', 'standout'),
-            ('evenBold', 'default,bold', 'default'),
-            ('odd', 'white', 'dark gray', 'standout'),
-            ('oddBold', 'white,bold', 'dark gray', 'standout'),
+    mono_palette = [
+            ('fill', 'default', 'default'),
+            ('even', 'standout', 'default'),
+            ('evenBold', 'standout,underline', 'default'),
+            ('odd', 'default', 'default'),
+            ('oddBold', 'underline', 'default'),
+            ('header', 'standout', 'default'),
+            ('selected', 'standout', 'default'),
+            ('selectedPrivate', 'standout', 'default'),
+            ('cypherlink', 'standout,underline', 'default')
+    ]
+    amber_palette = [
+            ('fill', 'white', 'black', 'default', '#fa0', '#000'),
+            ('even', 'black', 'white', 'standout', '#000', '#fa0'),
+            ('evenBold', 'black,underline', 'white', 'standout,underline', '#000,underline', '#fa0'),
+            ('odd', 'white', 'black', 'default', '#fa0', '#000'),
+            ('oddBold', 'white,underline', 'black', 'underline', '#fa0,underline', '#000'),
+            ('header', 'black', 'white', 'standout', '#000', '#fa0'),
+            ('selected', 'black', 'white', 'standout', '#000', '#fa0'),
+            ('selectedPrivate', 'black', 'white', 'standout', '#000', '#fa0'),
+            ('cypherlink', 'standout,underline', 'default')
+    ]
+    light_palette = [
+            ('fill', 'black', 'white'),
+            ('even', 'black', 'light gray', 'standout'),
+            ('evenBold', 'black,underline', 'light gray', 'standout'),
+            ('odd', 'black', 'white'),
+            ('oddBold', 'black,underline', 'white'),
+            ('header', 'white', 'light blue', 'underline'),
+            ('selected', 'white', 'light red', 'standout'),
+            ('selectedPrivate', 'white', 'light green', 'standout'),
+            ('cypherlink', 'light blue', 'default', 'underline')
+    ]
+    dark_palette = [
+            ('fill', 'white', 'black'),
+            ('even', 'white', 'dark gray', 'standout'),
+            ('evenBold', 'white,underline', 'dark gray', 'standout'),
+            ('odd', 'white', 'black', 'standout'),
+            ('oddBold', 'white,underline', 'black', 'standout'),
             ('header', 'black', 'light green', 'underline'),
             ('selected', 'black', 'light red', 'standout'),
             ('selectedPrivate', 'black', 'light blue', 'standout'),
             ('cypherlink', 'light blue', 'default', 'underline')
     ]
+    palette = { 'mono':  mono_palette,
+                'amber': amber_palette,
+                'light': light_palette,
+                'dark':  dark_palette } [args.style]
     screen = urwid.raw_display.Screen()
+    screen.set_terminal_properties(256)
+    # screen.set_terminal_properties(screen.colors)
     screen.register_palette(palette)
-    screen.set_terminal_properties(screen.colors)
 
     urwid_counter = urwid.Text('FWD=0 BWD=0 ', 'right', wrap='clip')
+    urwid_back = BackButton()
     urwid_title = urwid.Text('PUBLIC chats:', wrap='clip')
     urwid_header = urwid.Pile([
             urwid.Columns([('pack',urwid.Text(f"SurfCity - a log-less SSB client{ui_descr}", wrap='clip')),
                            urwid_counter
             ]),
-        urwid_title
+        urwid.Columns([(2,urwid_back),urwid_title])
+        
     ])
     urwid_hdrmap = urwid.AttrMap(urwid_header, 'header')
     if args.offline:
@@ -1186,7 +1320,8 @@ def launch(app_core, secr, args):
 
     evl = urwid.AsyncioEventLoop(loop=asyncio.get_event_loop())
     ensure_future(main(secr, args))
-    the_loop = urwid.MainLoop(urwid_frame, palette, event_loop=evl,
+    the_loop = urwid.MainLoop(urwid.AttrMap(urwid_frame, 'fill'),
+                              screen=screen, event_loop=evl,
                               unhandled_input=on_unhandled_input)
     try:
         the_loop.run()
