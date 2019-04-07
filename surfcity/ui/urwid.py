@@ -69,7 +69,9 @@ def activate_threadList(secr, clear_focus=False):
     global urwid_frame, urwid_threadList, widgets4threadList
     global refresh_focus, refresh_focus_pos, show_extended_network
     wl = copy.copy(widgets4threadList)
-    urwid_threadList = ThreadListBox(secr, wl, show_extended_network)
+    urwid_threadList = urwid.AttrMap(ThreadListBox(secr, wl,
+                                                   show_extended_network),
+                                     'fill')
     if clear_focus:
         refresh_focus = None
         refresh_focus_pos = 0
@@ -82,7 +84,7 @@ def activate_threadList(secr, clear_focus=False):
                 i += 1
             if i >= len(wl):
                 i = 0 # refresh_focus_pos
-            urwid_threadList.set_focus(i)
+            urwid_threadList._original_widget.set_focus(i)
     urwid_frame.contents['body'] = (urwid_threadList, None)
     output_log("")
 
@@ -90,7 +92,7 @@ def activate_convoList(secr, clearFocus = False):
     global urwid_frame, urwid_convoList, widgets4convoList
     global refresh_focus, refresh_focus_pos
     wl = copy.copy(widgets4convoList)
-    urwid_convoList = PrivateConvoListBox(secr, wl)
+    urwid_convoList = urwid.AttrMap(PrivateConvoListBox(secr, wl), 'fill')
     if clearFocus:
         refresh_focus = None
         refresh_focus_pos = 0
@@ -103,22 +105,20 @@ def activate_convoList(secr, clearFocus = False):
                 i += 1
             if i >= len(wl):
                 i = refresh_focus_pos
-            urwid_convoList.set_focus(i)
+            urwid_convoList._original_widget.set_focus(i)
     urwid_frame.contents['body'] = (urwid_convoList, None)
     output_log("")
 
 def activate_help(old_focus = None):
     global urwid_helpList
-    urwid_helpList = HelpListBox(old_focus)
-    # lb.set_focus(0)
+    urwid_helpList = urwid.AttrMap(HelpListBox(old_focus), 'fill')
     urwid_frame.contents['body'] = (urwid_helpList, None)
     output_log("")
     back_stack.append(old_focus)
 
 def activate_user(old_focus = None):
     global urwid_userList
-    urwid_userList = UserListBox(old_focus)
-    # urwid_userList.set_focus(0)
+    urwid_userList = urwid.AttrMap(UserListBox(old_focus), 'fill')
     urwid_frame.contents['body'] = (urwid_userList, None)
     output_log("")
     back_stack.append(old_focus)
@@ -547,7 +547,7 @@ This user interface supports four different color modes:
 -ui urwid_mono  monochrome, using the terminal's default colors'''
 ]
 
-class HelpListBox(urwid.AttrMap, urwid.ListBox):
+class HelpListBox(urwid.ListBox):
 
     _selectable = True
 
@@ -561,9 +561,9 @@ class HelpListBox(urwid.AttrMap, urwid.ListBox):
             p = urwid.Pile([urwid.Text(''), t, urwid.Text('')])
             lst.append(urwid.Padding(p, left=2, right=2))
         lst.append(urwid.Text('^--- H E L P ---^','center'))
-        self.body = urwid.SimpleFocusListWalker(lst)
-        lb = urwid.ListBox(self.body)
-        super(HelpListBox, self).__init__(lb, 'fill')
+        sflw = urwid.SimpleFocusListWalker(lst)
+        sflw.title = self.title
+        super().__init__(sflw)
 
     def keypress(self, size, key):
         key =  super(HelpListBox, self).keypress(size, key)
@@ -577,8 +577,6 @@ class HelpListBox(urwid.AttrMap, urwid.ListBox):
         if not key in arrow_left:
             return key
         set_frame(self.goback)
-        # urwid_title.set_text(self.goback.title)
-        # urwid_frame.contents['body'] = (self.goback, None)
 
     def mouse_event(self, size, event, button, x, y, focus):
         mouse_scroll(self, size, button)
@@ -586,7 +584,7 @@ class HelpListBox(urwid.AttrMap, urwid.ListBox):
 
 # ----------------------------------------------------------------------
 
-class UserListBox(urwid.AttrMap, urwid.ListBox):
+class UserListBox(urwid.ListBox):
 
     _selectable = True
 
@@ -685,9 +683,9 @@ class UserListBox(urwid.AttrMap, urwid.ListBox):
         lst.append(self._lines2widget(t))
 
         lst.append(urwid.Text('^--- U S E R S ---^', 'center'))
-        self.body = urwid.SimpleFocusListWalker(lst)
-        lb = urwid.ListBox(self.body)
-        super(UserListBox, self).__init__(lb, 'fill')
+        sflw = urwid.SimpleFocusListWalker(lst)
+        sflw.title = self.title
+        super().__init__(sflw)
 
     def keypress(self, size, key):
         key =  super(UserListBox, self).keypress(size, key)
@@ -734,9 +732,9 @@ class ConvoEntry(urwid.AttrMap):
         lines.append(self.count)
         pile = urwid.AttrMap(urwid.Pile(lines), attr)
         cols = urwid.Columns([(2,self.star),pile])
-        super(ConvoEntry, self).__init__(cols, None, focus_map='selectedPrivate')
+        super().__init__(cols, None, focus_map='selectedPrivate')
 
-class PrivateConvoListBox(urwid.AttrMap, urwid.ListBox):
+class PrivateConvoListBox(urwid.ListBox):
     # the list of private conversations
 
     _selectable = True
@@ -746,9 +744,9 @@ class PrivateConvoListBox(urwid.AttrMap, urwid.ListBox):
         self.secr = secr
         self.title = "PRIVATE conversations"
         urwid_title.set_text(self.title)
-        self.body = urwid.SimpleFocusListWalker(lst)
-        lb = urwid.ListBox(self.body)
-        super(PrivateConvoListBox, self).__init__(lb, 'fill')
+        b = urwid.SimpleFocusListWalker(lst)
+        b.title = self.title
+        super().__init__(b)
         # body = urwid.SimpleFocusListWalker(lst)
         # super(PrivateConvoListBox, self).__init__(body)
 
@@ -829,18 +827,18 @@ class PrivateConvoListBox(urwid.AttrMap, urwid.ListBox):
         # title = f"Private conversation with <{', '.join(nms)[:50]}>:"
         title = "Private conversation\n" + f"with {self.focus.title[:50]}"
 
-        urwid_privMsgList = PrivateMessageBox(self.secr, urwid_convoList,
+        urwid_privMsgList = urwid.AttrMap(PrivateMessageBox(self.secr,
+                                              urwid_convoList,
                                               self.focus.convo['recps'],
-                                              title, lst, root, branch)
-        urwid_privMsgList.set_focus(len(lst)-1)
+                                              title, lst, root, branch),
+                                          'fill')
+        urwid_privMsgList._original_widget.set_focus(len(lst)-1)
         urwid_frame.contents['body'] = (urwid_privMsgList, None)
 
     def mouse_event(self, size, event, button, col, row, focus):
         return list_mouse_event(self, size, event, button, col, row, focus)
-        # mouse_scroll(self, size, button)
-        # return True
 
-class PrivateMessageBox(urwid.AttrMap, urwid.ListBox):
+class PrivateMessageBox(urwid.ListBox):
     # a single private convo message
 
     _selectable = True
@@ -854,9 +852,9 @@ class PrivateMessageBox(urwid.AttrMap, urwid.ListBox):
         urwid_title.set_text(title)
         self.root = root
         self.branch = branch
-        self.body = urwid.SimpleFocusListWalker(lst)
-        lb = urwid.ListBox(self.body)
-        super(PrivateMessageBox, self).__init__(lb, 'fill')
+        sflw = urwid.SimpleFocusListWalker(lst)
+        sflw.title = self.title
+        super().__init__(sflw)
 
     def keypress(self, size, key):
         global screen_size, draft_private_text
@@ -872,7 +870,6 @@ class PrivateMessageBox(urwid.AttrMap, urwid.ListBox):
             return self.keypress(size, 'page up')
         if key in ['?']:
             return activate_help(urwid_privMsgList)
-            # return activate_help(urwid_convoList)
 
         if key in ['c']:
             r = RecptsDialog()
@@ -901,8 +898,6 @@ class PrivateMessageBox(urwid.AttrMap, urwid.ListBox):
         if not key in arrow_left:
             return key
         set_frame(self.goback)
-        # urwid_title.set_text(self.goback.title)
-        # urwid_frame.contents['body'] = (self.goback, None)
     
     def mouse_event(self, size, event, button, col, row, focus):
         mouse_scroll(self, size, button)
@@ -938,7 +933,7 @@ class ThreadEntry(urwid.AttrMap):
 #        output_log('hello 1')
 #        return True
 
-class MessageBox(urwid.AttrMap, urwid.ListBox):
+class MessageBox(urwid.ListBox):
     # public thread's messages
 
     _selectable = True
@@ -950,9 +945,9 @@ class MessageBox(urwid.AttrMap, urwid.ListBox):
         urwid_title.set_text(title[:screen_size[0]-1])
         self.root = root
         self.branch = branch
-        self.body = urwid.SimpleFocusListWalker(lst)
-        lb = urwid.ListBox(self.body)
-        super(MessageBox, self).__init__(lb, 'fill')
+        sflw = urwid.SimpleFocusListWalker(lst)
+        sflw.title = self.title
+        super().__init__(sflw)
 
     def keypress(self, size, key):
         key =  super(MessageBox, self).keypress(size, key)
@@ -984,8 +979,6 @@ class MessageBox(urwid.AttrMap, urwid.ListBox):
             return key
 
         set_frame(self.goback)
-        # urwid_title.set_text(self.goback.title)
-        # urwid_frame.contents['body'] = (self.goback, None)
 
     def mouse_event(self, size, event, button, col, row, focus):
         mouse_scroll(self, size, button)
@@ -995,9 +988,10 @@ def set_frame(goback):
     global back_stack
     back_stack.pop()
     urwid_frame.contents['body'] = (goback, None)
-    urwid_title.set_text(goback.title)
+    # urwid_title.set_text(goback.title)
+    urwid_title.set_text(goback._original_widget.title)
             
-class ThreadListBox(urwid.AttrMap, urwid.ListBox):
+class ThreadListBox(urwid.ListBox):
     # list of public threads
 
     _selectable = True
@@ -1009,9 +1003,9 @@ class ThreadListBox(urwid.AttrMap, urwid.ListBox):
                      if show_extended_network else \
                         "PUBLIC chats (with or from people I follow)"
         urwid_title.set_text(self.title)
-        self.body = urwid.SimpleFocusListWalker(lst)
-        lb = urwid.ListBox(self.body)
-        super(ThreadListBox, self).__init__(lb, 'fill')
+        sflw = urwid.SimpleFocusListWalker(lst)
+        sflw.title = self.title
+        super().__init__(sflw)
 
     def keypress(self, size, key):
         global urwid_back, urwid_msgList, show_extended_network
@@ -1090,9 +1084,11 @@ class ThreadListBox(urwid.AttrMap, urwid.ListBox):
         else:
             title = "Public:\n<unknown first post>"
 
-        urwid_msgList = MessageBox(self.secr, urwid_threadList, title, lst,
-                                   root, branch)
-        urwid_msgList.set_focus(len(lst)-1)
+        urwid_msgList = urwid.AttrMap(MessageBox(self.secr,
+                                                 urwid_threadList, title, lst,
+                                                 root, branch),
+                                      'fill')
+        urwid_msgList._original_widget.set_focus(len(lst)-1)
         urwid_frame.contents['body'] = (urwid_msgList, None)
 
     def mouse_event(self, size, event, button, col, row, focus):
