@@ -58,6 +58,8 @@ arrow_pg_down = [' ']
 key_quit      = ['q', 'Q']
 
 draft_text = None
+draft_private_text = None
+draft_private_recpts = []
 
 vacuum_intervall = 60*60*24*7 # once a week
 
@@ -106,8 +108,9 @@ def activate_convoList(secr, clearFocus = False):
     output_log("")
 
 def activate_help(old_focus = None):
+    global urwid_helpList
     urwid_helpList = HelpListBox(old_focus)
-    urwid_helpList.set_focus(0)
+    # lb.set_focus(0)
     urwid_frame.contents['body'] = (urwid_helpList, None)
     output_log("")
     back_stack.append(old_focus)
@@ -115,7 +118,7 @@ def activate_help(old_focus = None):
 def activate_user(old_focus = None):
     global urwid_userList
     urwid_userList = UserListBox(old_focus)
-    urwid_userList.set_focus(0)
+    # urwid_userList.set_focus(0)
     urwid_frame.contents['body'] = (urwid_userList, None)
     output_log("")
     back_stack.append(old_focus)
@@ -159,10 +162,17 @@ async def construct_convoList(secr, args, cache_only=False):
 
 async def main(secr, args):
     global widgets4threadList, widgets4convoList, error_message
-    global draft_text
+    global draft_text, draft_private_text, draft_private_recpts
     # global refresh_requested #, new_friends_flag
 
     draft_text = app.the_db.get_config('draft_post')
+    priv = app.the_db.get_config('draft_private_post')
+    if priv != None:
+        try:
+            priv = json.loads(priv)
+            draft_private_text, draft_private_recpts = priv
+        except:
+            pass
     try:
         last_vacuum = app.the_db.get_config('last_vacuum')
         now = int(time.time())
@@ -319,13 +329,13 @@ def on_unhandled_input(ev):
                     urwid_frame.keypress(screen_size, 'p')
                 # else: output_log('?? empty back_stack ??')
         elif ev[3] == screen_size[1] - 1 and screen_size[0] - ev[2] < 16:
-            if type(urwid_frame.contents['body'][0]) != HelpListBox:
+            if type(urwid_frame.contents['body'][0]) is HelpListBox:
                 activate_help(urwid_frame.contents['body'][0])
         return
     output_log(f"unhandled event: {str(ev)}")
 
 def output_counter():
-    urwid_counter.set_text(f"FWD={app.new_forw} BWD={app.new_back} ")
+    urwid_counter.set_text(f"  FWD={app.new_forw} BWD={app.new_back} ")
 
 
 # ----------------------------------------------------------------------
@@ -537,7 +547,7 @@ This user interface supports four different color modes:
 -ui urwid_mono  monochrome, using the terminal's default colors'''
 ]
 
-class HelpListBox(urwid.ListBox):
+class HelpListBox(urwid.AttrMap, urwid.ListBox):
 
     _selectable = True
 
@@ -548,11 +558,12 @@ class HelpListBox(urwid.ListBox):
         lst = [urwid.Text('v--- H E L P ---v', 'center')]
         for h in help:
             t = urwid.AttrMap(urwid.Text(h), 'even')
-            p = urwid.Pile([urwid.Text(''),t,urwid.Text('')])
+            p = urwid.Pile([urwid.Text(''), t, urwid.Text('')])
             lst.append(urwid.Padding(p, left=2, right=2))
-        lst.append(urwid.Text('^--- H E L P ---^', 'center'))
-        body = urwid.SimpleFocusListWalker(lst)
-        super(HelpListBox, self).__init__(body)
+        lst.append(urwid.Text('^--- H E L P ---^','center'))
+        self.body = urwid.SimpleFocusListWalker(lst)
+        lb = urwid.ListBox(self.body)
+        super(HelpListBox, self).__init__(lb, 'fill')
 
     def keypress(self, size, key):
         key =  super(HelpListBox, self).keypress(size, key)
@@ -575,7 +586,7 @@ class HelpListBox(urwid.ListBox):
 
 # ----------------------------------------------------------------------
 
-class UserListBox(urwid.ListBox):
+class UserListBox(urwid.AttrMap, urwid.ListBox):
 
     _selectable = True
 
@@ -595,7 +606,7 @@ class UserListBox(urwid.ListBox):
 
     def _lines2widget(self, lns):
         t = urwid.AttrMap(urwid.Text('\n'.join(lns)), 'even')
-        p = urwid.Pile([urwid.Text(''),t,urwid.Text('')])
+        p = urwid.Pile([urwid.Text(''), t, urwid.Text('')])
         return urwid.Padding(p, left=2, right=2)
 
     def __init__(self, goback, lst=[]):
@@ -674,8 +685,9 @@ class UserListBox(urwid.ListBox):
         lst.append(self._lines2widget(t))
 
         lst.append(urwid.Text('^--- U S E R S ---^', 'center'))
-        body = urwid.SimpleFocusListWalker(lst)
-        super(UserListBox, self).__init__(body)
+        self.body = urwid.SimpleFocusListWalker(lst)
+        lb = urwid.ListBox(self.body)
+        super(UserListBox, self).__init__(lb, 'fill')
 
     def keypress(self, size, key):
         key =  super(UserListBox, self).keypress(size, key)
@@ -691,8 +703,6 @@ class UserListBox(urwid.ListBox):
         if not key in arrow_left:
             return key
         set_frame(self.goback)
-        # urwid_title.set_text(self.goback.title)
-        # urwid_frame.contents['body'] = (self.goback, None)
 
     def mouse_event(self, size, event, button, x, y, focus):
         mouse_scroll(self, size, button)
@@ -711,8 +721,10 @@ class ConvoEntry(urwid.AttrMap):
         self.star = urwid.Text('*' if new_count > 0 else ' ')
         self.count = urwid.Text(('selected', f"({new_count} new)" \
                                  if new_count > 0 else ""), 'right')
-        self.convo_title = txt[0][1]
-        lines = [ urwid.Text((attr+'Bold', f"{self.convo_title[:75]} ({len(msgs)} messages)")) ]
+        self.title = txt[0][1]
+        m = "  (1 msg)" if len(msgs) == 1 else f"  ({len(msgs)} msgs)"
+        lines = [ urwid.Columns([urwid.Text((attr+'Bold', f"{self.title[:75]}"), wrap='clip'),
+                                 ('pack', urwid.Text(m))]) ]
         for ln in txt[1:]:
             lines.append(urwid.Columns([
                 (12, urwid.Text(ln[1][:10]+'  ', 'left', wrap='clip')),
@@ -724,16 +736,21 @@ class ConvoEntry(urwid.AttrMap):
         cols = urwid.Columns([(2,self.star),pile])
         super(ConvoEntry, self).__init__(cols, None, focus_map='selectedPrivate')
 
-class PrivateConvoListBox(urwid.ListBox):
+class PrivateConvoListBox(urwid.AttrMap, urwid.ListBox):
+    # the list of private conversations
 
     _selectable = True
+    _mouse_down = (-1,-1)
 
     def __init__(self, secr, lst=[]):
         self.secr = secr
         self.title = "PRIVATE conversations"
         urwid_title.set_text(self.title)
-        body = urwid.SimpleFocusListWalker(lst)
-        super(PrivateConvoListBox, self).__init__(body)
+        self.body = urwid.SimpleFocusListWalker(lst)
+        lb = urwid.ListBox(self.body)
+        super(PrivateConvoListBox, self).__init__(lb, 'fill')
+        # body = urwid.SimpleFocusListWalker(lst)
+        # super(PrivateConvoListBox, self).__init__(body)
 
     def keypress(self, size, key):
         global urwid_privMsgList
@@ -764,22 +781,14 @@ class PrivateConvoListBox(urwid.ListBox):
         if key in ['u', 'U']:
             return activate_user(urwid_convoList)
         if key in ['c']:
-            w = EditDialog('new PRIVATE message', draft_text)
-            c = ConfirmTextDialog()
-            w.open(lambda txt: c.open(txt,
-                           lambda : w.reopen(),
-                           lambda y: app.submit_private_post(self.secr,y))
-            )
-            return
-        if key in ['r']:
-            dest = self.focus.convo_title
-            w = EditDialog(f"Private reply to {dest}", draft_text)
-            c = ConfirmTextDialog()
-            w.open(lambda txt: c.open(txt,
-                           lambda : w.reopen(),
-                           lambda y: app.submit_private_post(self.secr,y,
-                                                             self.root,
-                                                             self.branch))
+            r = RecptsDialog()
+            e = EditDialog('Compose new PRIVATE message', is_private=True)
+            c = ConfirmTextDialog(True)
+            r.open(draft_private_recpts, lambda recpts:
+                   e.open(draft_private_text, lambda x: c.open(x, recpts,
+                         lambda : e.reopen(),
+                         lambda y: app.submit_private_post(self.secr,y,recpts))
+                   )
             )
             return
 
@@ -800,12 +809,12 @@ class PrivateConvoListBox(urwid.ListBox):
             if not n:
                 n = m['author']
             n = urwid.Columns([urwid.Text(n),
-                               (13, urwid.Text(app.utc2txt(m['timestamp'])))])
+                                 (13, urwid.Text(app.utc2txt(m['timestamp'])))])
             t = m['content']['text']
             t = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', t)
             t = urwid.AttrMap(urwid.Text(t), 'even')
             r = urwid.Text(m['key'], 'right')
-            p = urwid.Pile([urwid.Text(''),n,t,r,urwid.Text('')])
+            p = urwid.Pile([urwid.Text(''), n, t, r, urwid.Text('')])
             lst.append(urwid.Padding(p, left=2, right=2))
         lst.append(urwid.Text('---newest---', 'center'))
         
@@ -818,11 +827,11 @@ class PrivateConvoListBox(urwid.ListBox):
         ## if len(nms) == 0:
         ##     nms = [app.feed2name(secr.id)]
         # title = f"Private conversation with <{', '.join(nms)[:50]}>:"
-        title = "Private conversation\n" + f"with {self.focus.convo_title[:50]}"
+        title = "Private conversation\n" + f"with {self.focus.title[:50]}"
 
-        urwid_privMsgList = PrivateMessageListBox(self.secr, urwid_convoList,
-                                                  title, lst,
-                                                  root, branch)
+        urwid_privMsgList = PrivateMessageBox(self.secr, urwid_convoList,
+                                              self.focus.convo['recps'],
+                                              title, lst, root, branch)
         urwid_privMsgList.set_focus(len(lst)-1)
         urwid_frame.contents['body'] = (urwid_privMsgList, None)
 
@@ -831,26 +840,29 @@ class PrivateConvoListBox(urwid.ListBox):
         # mouse_scroll(self, size, button)
         # return True
 
-class PrivateMessageListBox(urwid.ListBox):
-    # private convo messages
+class PrivateMessageBox(urwid.AttrMap, urwid.ListBox):
+    # a single private convo message
 
     _selectable = True
 
-    def __init__(self, secr, goback, title, lst=[], root=None, branch=None):
+    def __init__(self, secr, goback, recpts, title,
+                 lst=[], root=None, branch=None):
         self.secr = secr
+        self.recpts = recpts
         self.goback = goback
         self.title = title
         urwid_title.set_text(title)
         self.root = root
         self.branch = branch
-        body = urwid.SimpleFocusListWalker(lst)
-        super(PrivateMessageListBox, self).__init__(body)
+        self.body = urwid.SimpleFocusListWalker(lst)
+        lb = urwid.ListBox(self.body)
+        super(PrivateMessageBox, self).__init__(lb, 'fill')
 
     def keypress(self, size, key):
-        global screen_size
+        global screen_size, draft_private_text
         screen_size = (size[0], size[1]+3)
 
-        key =  super(PrivateMessageListBox, self).keypress(size, key)
+        key =  super(PrivateMessageBox, self).keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -863,19 +875,23 @@ class PrivateMessageListBox(urwid.ListBox):
             # return activate_help(urwid_convoList)
 
         if key in ['c']:
-            w = EditDialog('new PRIVATE message', draft_text)
-            c = ConfirmTextDialog()
-            w.open(lambda txt: c.open(txt,
-                           lambda : w.reopen(),
-                           lambda y: app.submit_private_post(self.secr,y))
+            r = RecptsDialog()
+            e = EditDialog('Compose new PRIVATE message', is_private=True)
+            c = ConfirmTextDialog(True)
+            r.open(draft_private_recpts, lambda recpts:
+                   e.open(draft_private_text, lambda txt: c.open(txt, recpts,
+                         lambda : e.reopen(),
+                         lambda y: app.submit_private_post(self.secr,y,recpts))
+                   )
             )
             return
         if key in ['r']:
-            dest = self.title[self.title.index('<'):-1]
-            w = EditDialog(f"Private reply to {dest}", draft_text)
-            c = ConfirmTextDialog()
-            w.open(lambda txt: c.open(txt,
-                           lambda : w.reopen(),
+            dest = self.title
+            e = EditDialog(f"Compose PRIVATE reply to {dest[dest.index('<'):]}",
+                           is_private=True)
+            c = ConfirmTextDialog(True)
+            e.open(draft_private_text, lambda txt: c.open(txt, self.recpts,
+                           lambda : e.reopen(),
                            lambda y: app.submit_private_post(self.secr,y,
                                                              self.root,
                                                              self.branch))
@@ -906,7 +922,7 @@ class ThreadEntry(urwid.AttrMap):
         self.count = urwid.Text(('selected', f"({new_count} new)" \
                                  if new_count > 0 else ""), 'right')
         # lines = [ urwid.Text((attr+'Bold',f"'{txt[0][1][:75]}'")) ]
-        lines = [ urwid.Text((attr+'Bold',f"'{txt[0][1][:75]}'")) ]
+        lines = [ urwid.Text((attr+'Bold',f"'{txt[0][1][:75]}'"), wrap='clip') ]
         for ln in txt[1:]:
             lines.append(urwid.Columns([
                 (12, urwid.Text(ln[1][:10]+'  ', 'left', wrap='clip')),
@@ -922,7 +938,7 @@ class ThreadEntry(urwid.AttrMap):
 #        output_log('hello 1')
 #        return True
 
-class MessageListBox(urwid.ListBox):
+class MessageBox(urwid.AttrMap, urwid.ListBox):
     # public thread's messages
 
     _selectable = True
@@ -934,11 +950,12 @@ class MessageListBox(urwid.ListBox):
         urwid_title.set_text(title[:screen_size[0]-1])
         self.root = root
         self.branch = branch
-        body = urwid.SimpleFocusListWalker(lst)
-        super(MessageListBox, self).__init__(body)
+        self.body = urwid.SimpleFocusListWalker(lst)
+        lb = urwid.ListBox(self.body)
+        super(MessageBox, self).__init__(lb, 'fill')
 
     def keypress(self, size, key):
-        key =  super(MessageListBox, self).keypress(size, key)
+        key =  super(MessageBox, self).keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -947,21 +964,18 @@ class MessageListBox(urwid.ListBox):
         if key in arrow_pg_up:
             return self.keypress(size, 'page up')
         if key in ['?']:
-            # if self.goback == urwid_threadList:
             return activate_help(urwid_msgList)
-            # else:
-            #     return activate_help(urwid_privMsgList)
         if key in ['c', 'r']:
-            root, branch = (self.root, self.branch)
             if key == 'c':
-                w = EditDialog(f"new PUBLIC message and chat", draft_text)
+                e = EditDialog(f"Compose PUBLIC message in new thread")
                 root, branch = (None, None)
             else:
-                w = EditDialog(f"PUBLIC msg in chat {self.title[8:50]}",
-                               draft_text)
-            c = ConfirmTextDialog()
-            w.open(lambda txt: c.open(txt,
-                           lambda : w.reopen(),
+                e = EditDialog("Compose PUBLIC reply in chat\n" + \
+                               f"{self.title[8:50]}'")
+                root, branch = (self.root, self.branch)
+            c = ConfirmTextDialog(False)
+            e.open(draft_text, lambda txt: c.open(txt, None,
+                           lambda : e.reopen(),
                            lambda y: app.submit_public_post(self.secr, y,
                                                             root, branch))
             )
@@ -983,7 +997,7 @@ def set_frame(goback):
     urwid_frame.contents['body'] = (goback, None)
     urwid_title.set_text(goback.title)
             
-class ThreadListBox(urwid.ListBox):
+class ThreadListBox(urwid.AttrMap, urwid.ListBox):
     # list of public threads
 
     _selectable = True
@@ -995,8 +1009,9 @@ class ThreadListBox(urwid.ListBox):
                      if show_extended_network else \
                         "PUBLIC chats (with or from people I follow)"
         urwid_title.set_text(self.title)
-        body = urwid.SimpleFocusListWalker(lst)
-        super(ThreadListBox, self).__init__(body)
+        self.body = urwid.SimpleFocusListWalker(lst)
+        lb = urwid.ListBox(self.body)
+        super(ThreadListBox, self).__init__(lb, 'fill')
 
     def keypress(self, size, key):
         global urwid_back, urwid_msgList, show_extended_network
@@ -1034,10 +1049,10 @@ class ThreadListBox(urwid.ListBox):
         if key in ['p', 'P']:
             return activate_convoList(self.secr, True)
         if key in ['c']:
-            w = EditDialog(f"new PUBLIC message and chat", draft_text)
-            c = ConfirmTextDialog()
-            w.open(lambda txt: c.open(txt,
-                           lambda : w.reopen(),
+            e = EditDialog(f"Compose PUBLIC message in new thread")
+            c = ConfirmTextDialog(False)
+            e.open(draft_text, lambda txt: c.open(txt, None,
+                           lambda : e.reopen(),
                            lambda y: app.submit_public_post(self.secr, y))
             )
             return
@@ -1075,8 +1090,8 @@ class ThreadListBox(urwid.ListBox):
         else:
             title = "Public:\n<unknown first post>"
 
-        urwid_msgList = MessageListBox(self.secr, urwid_threadList, title, lst,
-                                       root, branch)
+        urwid_msgList = MessageBox(self.secr, urwid_threadList, title, lst,
+                                   root, branch)
         urwid_msgList.set_focus(len(lst)-1)
         urwid_frame.contents['body'] = (urwid_msgList, None)
 
@@ -1121,23 +1136,25 @@ class ThreadListBox(urwid.ListBox):
         return True
         
 
+def save_draft(txt, recpts):
+    global draft_text, draft_private_text, draft_private_recpts
+    if recpts != None:
+        draft_private_text = txt
+        draft_private_recpts = recpts
+        app.the_db.set_config('draft_private_post', json.dumps((txt, recpts)))
+    else:
+        draft_text = txt
+        app.the_db.set_config('draft_post', txt)
+
 # ----------------------------------------------------------------------
 
 class EditDialog(urwid.Overlay):
 
-    def __init__(self, bannerTxt, draft=None):
-        header_text = urwid.Text(('banner', bannerTxt + \
-                                  '\n(use TAB to select buttons)'),
-                                 align = 'center')
-        header = urwid.AttrMap(header_text, 'banner')
-
+    def __init__(self, bannerTxt, is_private=False):
+        self.is_private = is_private
+        header = urwid.Text( bannerTxt + '\n(use TAB to select buttons)',
+                            align = 'center')
         self.edit = urwid.Edit(multiline=True)
-        if draft:
-            self.edit.set_edit_text(draft)
-        self.edit.set_edit_pos(0)
-
-        # body_text = urwid.Text(text, align = 'center')
-        # body_filler = urwid.Filler(body_text, valign = 'top')
         body_filler = urwid.Filler(self.edit, valign = 'top')
         body_padding = urwid.Padding(
             body_filler,
@@ -1147,13 +1164,16 @@ class EditDialog(urwid.Overlay):
         body = urwid.LineBox(body_padding)
 
         w = the_loop.widget
-        footer1 = urwid.Button('Cancel', lambda x:self.close())
-        footer2 = urwid.Button('Preview', lambda x: self._callback())
-        # footer = urwid.AttrWrap(footer, 'selectable', 'focus')
+        footer1 = urwid.AttrMap(urwid.Button('Cancel ',
+                                             lambda x:self.close()),
+                                None, focus_map = 'selected')
+        footer2 = urwid.AttrMap(urwid.Button('Preview',
+                                             lambda x: self._callback()),
+                                None, focus_map = 'selected')
         footer = urwid.GridFlow([footer1,footer2], 11, 1, 1, 'center')
 
-        self.layout = urwid.Frame(body, header = header, footer = footer)
-        super(EditDialog, self).__init__(urwid.LineBox(self.layout), w,
+        lb = urwid.LineBox(urwid.Frame(body, header = header, footer = footer))
+        super(EditDialog, self).__init__(urwid.AttrMap(lb,'fill'), w,
                                          align = 'center', valign = 'middle',
                                          width = screen_size[0]-2,
                                          height = screen_size[1]-2)
@@ -1162,9 +1182,6 @@ class EditDialog(urwid.Overlay):
         # if key in key_quit:
         #     raise urwid.ExitMainLoop()
         if key in ['esc']:
-            global draft_text
-            draft_text = self.edit.get_edit_text()
-            app.the_db.set_config('draft_post', draft_text)
             self.close()
         if key in ['tab']:
             paths = [[1, 'body'], [1, 'footer', 0], [1, 'footer', 1]]
@@ -1174,7 +1191,15 @@ class EditDialog(urwid.Overlay):
             return
         key = super(EditDialog, self).keypress(size, key)
 
-    def open(self, ok_callback):
+    def open(self, txt, ok_callback):
+        if txt:
+            self.edit.set_edit_text(txt)
+            self.edit.set_edit_pos(len(txt))
+        elif self.is_private and draft_private_recpts:
+            if not draft_private_text or draft_private_text == '':
+                t = ', '.join(draft_private_recpts) + '\n\n'
+                self.edit.set_edit_text(t)
+                self.edit.set_edit_pos(len(t))
         self.callback = ok_callback
         self.set_focus_path([1, 'body'])
         the_loop.widget = self
@@ -1184,38 +1209,54 @@ class EditDialog(urwid.Overlay):
         the_loop.widget = self
 
     def _callback(self):
-        global draft_text
         self.close()
-        txt = self.edit.get_edit_text()
-        draft_text = txt
-        app.the_db.set_config('draft_post', draft_text)
-        self.callback(txt)
+        self.callback(self.edit.get_edit_text())
         
     def close(self):
+        recpts = None
+        if self.is_private:
+            global draft_private_recpts
+            recpts = draft_private_recpts
+        save_draft(self.edit.get_edit_text(), recpts)
         the_loop.widget = urwid_frame
         the_loop.draw_screen()
 
 class ConfirmTextDialog(urwid.Overlay):
 
-    def __init__(self):
-        header_text = urwid.Text(('selected', ' Really post this message? \n(use up/down arrows to scroll, TAB to select buttons)'),
-                                 align = 'center')
-        header = urwid.AttrMap(header_text, 'banner')
-
-        self.body_text = urwid.Text('dummy', align = 'left')
-        body_filler = urwid.ListBox(urwid.SimpleFocusListWalker([self.body_text]))
+    def __init__(self, is_private=False):
+        self.is_private = is_private
+        txt = 'PRIVATE' if is_private else 'PUBLIC'
+        header = urwid.Text(('selected',
+                             f" Really post this {txt} message? " + \
+                             "\n(use up/down arrows to scroll, " + \
+                             "TAB to select buttons)"),
+                            align = 'center')
+        self.body_text = urwid.Text('', align = 'left')
+        self.recpts_text = urwid.Text('', align = 'left')
+        if self.is_private:
+            lst = [ urwid.AttrMap(self.recpts_text, 'selected'),
+                    urwid.Divider() ]
+        else:
+            lst = []
+        lst.append( urwid.AttrMap(self.body_text, 'even') )
+        body_filler = urwid.ListBox(urwid.SimpleFocusListWalker(lst))
         body_padding = urwid.Padding(body_filler, left = 1, right = 1)
         body = urwid.LineBox(body_padding)
 
         w = the_loop.widget
-        footer1 = urwid.Button('back',  lambda x:self._back_callback())
-        footer2 = urwid.Button('cancel', lambda x:self.close())
-        footer3 = urwid.Button(' send!',  lambda x:self._send_callback())
-        # footer = urwid.AttrWrap(footer, 'selectable', 'focus')
+        footer1 = urwid.AttrMap(urwid.Button(' back ',
+                                             lambda x:self._back_callback()),
+                                None, focus_map = 'selected')
+        footer2 = urwid.AttrMap(urwid.Button('cancel',
+                                             lambda x:self.close()),
+                                None, focus_map = 'selected')
+        footer3 = urwid.AttrMap(urwid.Button(' send!',
+                                             lambda x:self._send_callback()),
+                                None, focus_map = 'selected')
         footer = urwid.GridFlow([footer1,footer2,footer3], 10, 1, 1, 'center')
 
-        self.layout = urwid.Frame(body, header = header, footer = footer)
-        super(ConfirmTextDialog, self).__init__(urwid.LineBox(self.layout), w,
+        lb = urwid.LineBox(urwid.Frame(body, header = header, footer = footer))
+        super(ConfirmTextDialog, self).__init__(urwid.AttrMap(lb, 'fill'), w, 
                                          align = 'center', valign = 'middle',
                                          width = screen_size[0]-2,
                                          height = screen_size[1]-2)
@@ -1229,15 +1270,23 @@ class ConfirmTextDialog(urwid.Overlay):
             paths = [[1, 'body', 0],   [1, 'footer', 0],
                      [1, 'footer', 1], [1, 'footer', 2]]
             fp = self.get_focus_path()
+            if fp[1] == 'body':
+                fp = [1, 'body', 0]
             i = (paths.index(fp) + 1) % len(paths)
             self.set_focus_path(paths[i])
             return
         key = super(ConfirmTextDialog, self).keypress(size, key)
 
-    def open(self, text, back_callback, send_callback):
+    def mouse_event(self, size, event, button, x, y, focus):
+        if mouse_scroll(self, size, button):
+            return True
+        return super(ConfirmTextDialog, self).mouse_event(size, event,
+                                                          button, x, y, focus)
+
+    def open(self, text, recpts, back_callback, send_callback):
         self.back_callback = back_callback
         self.send_callback = send_callback
-        r = r"(#[a-zA-Z0-9\-_\.]+)|(%.{44}\.sha256)|(@.{44}.ed25519)|(\(([^\)]+)\)\[[^\]]+\])|(\[[^\]]+\]\([^\)]+\))"
+        r = r"(#[a-zA-Z0-9\-_\.]+)|((\&|%).{44}\.sha256)|(@.{44}.ed25519)|(\(([^\)]+)\)\[[^\]]+\])|(\[[^\]]+\]\([^\)]+\))"
         all = []
         pos = 0
         for i in re.finditer(r, text):
@@ -1258,6 +1307,14 @@ class ConfirmTextDialog(urwid.Overlay):
         if pos < len(text):
             all.append(text[pos:len(text)])
         self.body_text.set_text(all)
+        if recpts:
+            lst = ['Recipients:']
+            for r in recpts:
+                nm = app.feed2name(r)
+                if nm:
+                    r = f"[@{nm}]({r})"
+                lst.append('  ' + r)
+            self.recpts_text.set_text('\n'.join(lst))
         self.set_focus_path([1, 'body'])
         the_loop.widget = self
 
@@ -1266,14 +1323,112 @@ class ConfirmTextDialog(urwid.Overlay):
         self.back_callback()
 
     def _send_callback(self):
-        global draft_text
         logger.info("send_callback")
         self.close()
-        draft_text = None
-        app.the_db.set_config('draft_post', None)
         self.send_callback(str(self.body_text.get_text()[0]))
+        save_draft(None, [] if self.is_private else None)
         
     def close(self):
+        the_loop.widget = urwid_frame
+        the_loop.draw_screen()
+
+# ----------------------------------------------------------------------
+
+class RecptsDialog(urwid.Overlay):
+
+    def __init__(self):
+        header = urwid.Text("Enter the recipients for a private msg, " + \
+                            "one per line\n(use TAB to select buttons)",
+                            align = 'center')
+        self.edit = urwid.Edit(multiline=True)
+        self.edit.set_edit_pos(0)
+
+        body_filler = urwid.Filler(self.edit, valign = 'top')
+        body_padding = urwid.Padding(body_filler, left = 1, right = 1)
+        body = urwid.LineBox(body_padding)
+
+        w = the_loop.widget
+        footer1 = urwid.AttrMap(urwid.Button('Cancel',
+                                             lambda x:self.close()),
+                                None, focus_map='selected')
+        footer2 = urwid.AttrMap(urwid.Button(' Done ',
+                                             lambda x: self._callback()),
+                                None, focus_map='selected')
+        footer = urwid.GridFlow([footer1,footer2], 11, 1, 1, 'center')
+
+        lb = urwid.LineBox(urwid.Frame(body, header = header, footer = footer))
+        super(RecptsDialog, self).__init__(urwid.AttrMap(lb, 'fill'), w,
+                                         align = 'center', valign = 'middle',
+                                         width = screen_size[0]-2,
+                                         height = screen_size[1]-2)
+        
+    def keypress(self, size, key):
+        # if key in key_quit:
+        #     raise urwid.ExitMainLoop()
+        if key in ['esc']:
+            self.close()
+        if key in ['tab']:
+            paths = [[1, 'body'], [1, 'footer', 0], [1, 'footer', 1]]
+            fp = self.get_focus_path()
+            output_log(str(fp))
+            i = (paths.index(fp) + 1) % len(paths)
+            self.set_focus_path(paths[i])
+            return
+        key = super(RecptsDialog, self).keypress(size, key)
+
+    def open(self, recpts, ok_callback):
+        if recpts:
+            self.edit.set_edit_text('\n'.join(recpts))
+        self.callback = ok_callback
+        self.set_focus_path([1, 'body'])
+        the_loop.widget = self
+
+    def reopen(self):
+        self.set_focus_path([1, 'body'])
+        the_loop.widget = self
+
+    def _callback(self):
+        recpts = self.edit.get_edit_text().replace(',', '\n').split('\n')
+        good, bad = [], []
+        addr = re.compile(r"(@.{44}.ed25519)")
+        for r in recpts:
+            r = r.strip()
+            if len(r) == 0:
+                continue
+            for i in addr.findall(r):
+                good.append(i)
+                break
+            else:
+                users = app.the_db.match_about_name(f"^{r[1:]}$"
+                                                    if r[0] == '@' else r)
+                logger.info(f"users: <{r}> {str(users)}")
+                if len(users) == 1:
+                    good.append(users[0])
+                else:
+                    bad.append(f"? {r}" if len(users) == 0 else f"?+ {r}")
+        lst = []
+        for r in list(set(good)):
+            nm = app.feed2name(r)
+            if nm:
+                r = f"[@{nm}]({r})"
+            lst.append(r)
+        good = lst
+        if len(good) + len(bad) == 0:
+            bad = ['add one recipient']
+        if len(good) + len(bad) >= 7:
+            bad = ['max 7 recipients'] + bad
+        if len(bad) > 0:
+            self.edit.set_edit_text('\n'.join(bad + lst))
+            self.edit.set_edit_pos(len(bad[0]))
+            self.set_focus_path([1, 'body'])
+        else:
+            self.edit.set_edit_text('\n'.join(good))
+            self.close()
+            self.callback(good)
+        
+    def close(self):
+        global draft_private_text
+        save_draft(draft_private_text, self.edit.get_edit_text().split('\n'))
         the_loop.widget = urwid_frame
         the_loop.draw_screen()
 
@@ -1296,7 +1451,7 @@ def launch(app_core, secr, args):
             ('header', 'black', 'light gray', 'standout', '#000', '#fa0'),
             ('selected', 'black', 'light gray', 'standout', '#000', '#fa0'),
             ('selectedPrivate', 'black', 'light gray', 'standout', '#000', '#fa0'),
-            ('cypherlink', 'dark red,underline', 'black', 'standout', '#fa0,underline', '#000')
+            ('cypherlink', 'dark red,underline', 'black', 'standout', '#fa0,underline', '#d80')
     ]
     green_palette = [
             ('fill', 'dark green', 'black'),
@@ -1307,7 +1462,7 @@ def launch(app_core, secr, args):
             ('header', 'black', 'light green'),
             ('selected', 'black', 'light green'),
             ('selectedPrivate', 'black', 'light green'),
-            ('cypherlink', 'dark green,underline', 'black')
+            ('cypherlink', 'black,underline', 'dark green')
     ]
     mono_palette = [
             ('fill', 'default', 'default'),
@@ -1329,7 +1484,7 @@ def launch(app_core, secr, args):
             ('header', 'white', 'light blue', 'underline'),
             ('selected', 'white', 'light red', 'standout'),
             ('selectedPrivate', 'white', 'light green', 'standout'),
-            ('cypherlink', 'light blue', 'default', 'underline')
+            ('cypherlink', 'light blue,underline', 'light gray', 'standout')
     ]
     dark_palette = [
             ('fill', 'white', 'black'),
@@ -1340,7 +1495,7 @@ def launch(app_core, secr, args):
             ('header', 'black', 'light green', 'underline'),
             ('selected', 'black', 'light red', 'standout'),
             ('selectedPrivate', 'black', 'light blue', 'standout'),
-            ('cypherlink', 'light blue', 'default', 'underline')
+            ('cypherlink', 'light blue,underline', 'dark gray', 'standout')
     ]
     palette = { 'mono':  mono_palette,
                 'green': green_palette,
@@ -1351,12 +1506,11 @@ def launch(app_core, secr, args):
     screen.set_terminal_properties(256)
     screen.register_palette(palette)
 
-    urwid_counter = urwid.Text('FWD=0 BWD=0 ', 'right', wrap='clip')
-    # urwid_back = BackButton()
+    urwid_counter = urwid.Text('  FWD=0 BWD=0 ', 'right', wrap='clip')
     urwid_title = urwid.Text('PUBLIC chats:', wrap='clip')
     urwid_header = urwid.Pile([
-            urwid.Columns([('pack',urwid.Text(f"SurfCity - a log-less SSB client{ui_descr}", wrap='clip')),
-                           urwid_counter
+            urwid.Columns([urwid.Text(f"SurfCity - a log-less SSB client{ui_descr}", wrap='clip'),
+                           ('pack', urwid_counter)
             ]),
         urwid_title
         

@@ -4,10 +4,14 @@
 
 import base64
 import json
+import logging
+import re
 import sqlite3
 import sys
 import time
 import traceback
+
+logger = logging.getLogger('ssb_app_db')
 
 '''
 {
@@ -182,6 +186,29 @@ class SURFCITY_DB:
         if not val or len(val) == 0:
             return None
         return val[0]
+
+    def match_about_name(self, regex):
+        try:
+            pattern = re.compile(regex)
+        except:
+            return []
+        lst = []
+        sql = "SELECT str,val,attr FROM ssb_feed INNER JOIN ssb_about ON feed = i"
+        for c in self.conn.execute(sql):
+            if c[2] in ['myname', 'name']:
+                if pattern.search(c[0]):
+                    lst.append(c[0])
+                continue
+            try: # c[2] == 'named':
+                for s in json.loads(c[1]):
+                    if pattern.search(s):
+                        lst.append(c[0])
+                        break
+            except:
+                pass
+
+        return lst
+
 
     def update_id_front(self, feedId, front, prev):
         i = self._get_feed_ndx(feedId)

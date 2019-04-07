@@ -56,7 +56,7 @@ def feed2name(feedID):
             n = the_db.get_about(feedID, 'named')
             if n:
                 n = json.loads(n)
-                if len(n) > 0:
+                if type(n) == list and len(n) > 0:
                     n = n[0]
                 else:
                     n = None
