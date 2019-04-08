@@ -313,14 +313,28 @@ def output_log(txt='', end=None, flush=None):
     urwid_footer.set_text(txt)
     pass
 
+def start_menu():
+    a = 'Q'
+    b = urwid_frame.contents['body'][0]
+    if   b == urwid_threadList:  a = '!CU?Q'
+    elif b == urwid_convoList:   a = '!CU?Q'
+    elif b == urwid_msgList:     a = 'RC?Q'
+    elif b == urwid_privMsgList: a = 'RC?Q'
+    elif b == urwid_userList:    a = '?Q'
+    Menu(a).open()
+    
 def on_unhandled_input(ev):
     screen_size = urwid.raw_display.Screen().get_cols_rows()
 
+    if ev == 'esc':
+        return start_menu()
     if type(ev) == tuple and ev[0] == 'mouse press':
+        if type(the_loop.widget) is Menu:
+            the_loop.widget.close()
+            return
         if ev[3] < 3:
             if screen_size[0] - ev[2] < 16:
-                # output_log('refresh!')
-                urwid_frame.keypress(screen_size, '!')
+                start_menu()
             else:
                 if len(back_stack) > 0:
                     set_frame(back_stack[-1])
@@ -332,6 +346,7 @@ def on_unhandled_input(ev):
             if type(urwid_frame.contents['body'][0]) is HelpListBox:
                 activate_help(urwid_frame.contents['body'][0])
         return
+
     output_log(f"unhandled event: {str(ev)}")
 
 def output_counter():
@@ -427,19 +442,19 @@ Santa Cruz, Feb 2019
     '''Keyboard bindings:
 
 ?                      this help screen
-q, ESC                 quit
+q                      quit
+ESC                    open menu / exit a popup window
 
-r                      refresh Private or Public screen
+!                      refresh Private or Public screen
 p                      toggle between Private and Public screen
-e                      toggle extended network (when in Public screen,
-                       and when doing the next screen refresh)
+e                      toggle extended network (when in Public screen)
 
-u                      user directory screen (rudimentary)
+u                      simple user directory
 
 c                      compose new message
 r                      reply in a thread
 
->, l, right-arrow, enter   enter detail page
+>, l, rght-arrow, ret  enter detail page
 <, h, left-arrow       leave detail page
 down/up-arrow, j/k     move upwards/downwards in the list
 page-down, page-up     scroll through the list''',
@@ -453,9 +468,9 @@ conversations, entries can be clicked on in order to expand them.
 Clicking in the UPPER LEFT corner is equivalent to either 'back' or
 for toggling between public threads and private conversations.
 
-Clicking in the UPPER RIGHT corner triggers a refresh.
-
-Clicking in the LOWER RIGHT corner triggers the help screen.''',
+Clicking in the UPPER RIGHT corner opens a menu with clickable
+options for trigger a refresh, do a reply, etc without having to
+type any key.''',
     
     '''About SurfCity
 
@@ -566,7 +581,7 @@ class HelpListBox(urwid.ListBox):
         super().__init__(sflw)
 
     def keypress(self, size, key):
-        key =  super(HelpListBox, self).keypress(size, key)
+        key =  super().keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -688,7 +703,7 @@ class UserListBox(urwid.ListBox):
         super().__init__(sflw)
 
     def keypress(self, size, key):
-        key =  super(UserListBox, self).keypress(size, key)
+        key =  super().keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -744,18 +759,16 @@ class PrivateConvoListBox(urwid.ListBox):
         self.secr = secr
         self.title = "PRIVATE conversations"
         urwid_title.set_text(self.title)
-        b = urwid.SimpleFocusListWalker(lst)
-        b.title = self.title
-        super().__init__(b)
-        # body = urwid.SimpleFocusListWalker(lst)
-        # super(PrivateConvoListBox, self).__init__(body)
+        sflw = urwid.SimpleFocusListWalker(lst)
+        sflw.title = self.title
+        super().__init__(sflw)
 
     def keypress(self, size, key):
         global urwid_privMsgList
         global refresh_focus, refresh_focus_pos # refresh_requested, 
         if smooth_scroll(self, size, key):
             return
-        key = super(PrivateConvoListBox, self).keypress(size, key)
+        key = super().keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -860,7 +873,7 @@ class PrivateMessageBox(urwid.ListBox):
         global screen_size, draft_private_text
         screen_size = (size[0], size[1]+3)
 
-        key =  super(PrivateMessageBox, self).keypress(size, key)
+        key =  super().keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -927,7 +940,7 @@ class ThreadEntry(urwid.AttrMap):
         lines.append(self.count)
         pile = urwid.AttrMap(urwid.Pile(lines), attr)
         cols = urwid.Columns([(2,self.star),pile])
-        super(ThreadEntry, self).__init__(cols, None, focus_map='selected')
+        super().__init__(cols, None, focus_map='selected')
 
 #    def mouse_event(self, size, event, button, x, y, focus):
 #        output_log('hello 1')
@@ -950,7 +963,7 @@ class MessageBox(urwid.ListBox):
         super().__init__(sflw)
 
     def keypress(self, size, key):
-        key =  super(MessageBox, self).keypress(size, key)
+        key =  super().keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -1015,7 +1028,7 @@ class ThreadListBox(urwid.ListBox):
 
         if smooth_scroll(self, size, key):
             return
-        key = super(ThreadListBox, self).keypress(size, key)
+        key = super().keypress(size, key)
 
         if key in key_quit:
             raise urwid.ExitMainLoop()
@@ -1169,23 +1182,26 @@ class EditDialog(urwid.Overlay):
         footer = urwid.GridFlow([footer1,footer2], 11, 1, 1, 'center')
 
         lb = urwid.LineBox(urwid.Frame(body, header = header, footer = footer))
-        super(EditDialog, self).__init__(urwid.AttrMap(lb,'fill'), w,
-                                         align = 'center', valign = 'middle',
-                                         width = screen_size[0]-2,
-                                         height = screen_size[1]-2)
+        super().__init__(urwid.AttrMap(lb, 'fill'), w,
+                         align = 'center', valign = 'middle',
+                         width = screen_size[0]-2,
+                         height = screen_size[1]-2)
         
     def keypress(self, size, key):
         # if key in key_quit:
         #     raise urwid.ExitMainLoop()
         if key in ['esc']:
             self.close()
-        if key in ['tab']:
+        if key in ['tab', 'shift tab']:
             paths = [[1, 'body'], [1, 'footer', 0], [1, 'footer', 1]]
             fp = self.get_focus_path()
-            i = (paths.index(fp) + 1) % len(paths)
+            if key == 'tab':
+                i = (paths.index(fp) + 1) % len(paths)
+            else:
+                i = (paths.index(fp) + len(paths) - 1) % len(paths)
             self.set_focus_path(paths[i])
             return
-        key = super(EditDialog, self).keypress(size, key)
+        key = super().keypress(size, key)
 
     def open(self, txt, ok_callback):
         if txt:
@@ -1252,32 +1268,32 @@ class ConfirmTextDialog(urwid.Overlay):
         footer = urwid.GridFlow([footer1,footer2,footer3], 10, 1, 1, 'center')
 
         lb = urwid.LineBox(urwid.Frame(body, header = header, footer = footer))
-        super(ConfirmTextDialog, self).__init__(urwid.AttrMap(lb, 'fill'), w, 
-                                         align = 'center', valign = 'middle',
-                                         width = screen_size[0]-2,
-                                         height = screen_size[1]-2)
+        super().__init__(urwid.AttrMap(lb, 'fill'), w, 
+                         align = 'center', valign = 'middle',
+                         width = screen_size[0]-2,
+                         height = screen_size[1]-2)
         
     def keypress(self, size, key):
-        # if key in key_quit:
-        #     raise urwid.ExitMainLoop()
         if key in ['esc']:
             self.close()
-        if key in ['tab']:
+        if key in ['tab', 'shift tab']:
             paths = [[1, 'body', 0],   [1, 'footer', 0],
                      [1, 'footer', 1], [1, 'footer', 2]]
             fp = self.get_focus_path()
             if fp[1] == 'body':
                 fp = [1, 'body', 0]
-            i = (paths.index(fp) + 1) % len(paths)
+            if key == 'tab':
+                i = (paths.index(fp) + 1) % len(paths)
+            else:
+                i = (paths.index(fp) + len(paths) - 1) % len(paths)
             self.set_focus_path(paths[i])
             return
-        key = super(ConfirmTextDialog, self).keypress(size, key)
+        key = super().keypress(size, key)
 
     def mouse_event(self, size, event, button, x, y, focus):
         if mouse_scroll(self, size, button):
             return True
-        return super(ConfirmTextDialog, self).mouse_event(size, event,
-                                                          button, x, y, focus)
+        return super().mouse_event(size, event, button, x, y, focus)
 
     def open(self, text, recpts, back_callback, send_callback):
         self.back_callback = back_callback
@@ -1353,24 +1369,27 @@ class RecptsDialog(urwid.Overlay):
         footer = urwid.GridFlow([footer1,footer2], 11, 1, 1, 'center')
 
         lb = urwid.LineBox(urwid.Frame(body, header = header, footer = footer))
-        super(RecptsDialog, self).__init__(urwid.AttrMap(lb, 'fill'), w,
-                                         align = 'center', valign = 'middle',
-                                         width = screen_size[0]-2,
-                                         height = screen_size[1]-2)
+        super().__init__(urwid.AttrMap(lb, 'fill'), w,
+                         align = 'center', valign = 'middle',
+                         width = screen_size[0]-2,
+                         height = screen_size[1]-2)
         
     def keypress(self, size, key):
         # if key in key_quit:
         #     raise urwid.ExitMainLoop()
         if key in ['esc']:
             self.close()
-        if key in ['tab']:
+        if key in ['tab', 'shift tab']:
             paths = [[1, 'body'], [1, 'footer', 0], [1, 'footer', 1]]
             fp = self.get_focus_path()
             output_log(str(fp))
-            i = (paths.index(fp) + 1) % len(paths)
+            if key == 'tab':
+                i = (paths.index(fp) + 1) % len(paths)
+            else:
+                i = (paths.index(fp) + len(paths) - 1) % len(paths)
             self.set_focus_path(paths[i])
             return
-        key = super(RecptsDialog, self).keypress(size, key)
+        key = super().keypress(size, key)
 
     def open(self, recpts, ok_callback):
         if recpts:
@@ -1427,6 +1446,71 @@ class RecptsDialog(urwid.Overlay):
         save_draft(draft_private_text, self.edit.get_edit_text().split('\n'))
         the_loop.widget = urwid_frame
         the_loop.draw_screen()
+
+# ---------------------------------------------------------------------------
+
+class Menu(urwid.Overlay):
+
+    _labels = [ '',
+                'refresh   !',
+                '',
+                'reply     R',
+                'compose   C',
+                '',
+                'directory U',
+                'help      ?',
+                '',
+                'quit      Q'
+    ]
+
+    def cb(self, button):
+        screen_size = urwid.raw_display.Screen().get_cols_rows()
+        l = button.get_label()[-1].lower()
+        self.close()
+        urwid_frame.keypress(screen_size, l)
+
+    def open(self):
+        the_loop.widget = self
+        
+    def close(self):
+        the_loop.widget = urwid_frame
+        the_loop.draw_screen()
+        
+    def __init__(self, active=None):
+        self._active = active
+        body = [ urwid.Text("    M E N U") ]
+        for l in self._labels:
+            if l == '':
+                body.append( urwid.Text('---------------') )
+            else:
+                if not active or l[-1] in active:
+                    body.append( urwid.AttrMap(urwid.Button(l, self.cb),
+                                           None, 'selected') )
+                else:
+                    body.append(urwid.Text(('even', f"  {l}  ")))
+        lb = urwid.ListBox(urwid.SimpleFocusListWalker(body))
+        super().__init__(urwid.AttrMap(urwid.LineBox(lb), 'fill'),
+                         the_loop.widget, align = 'right', valign = 'top',
+                         width=('relative',5), height=('relative',5),
+                         min_width=17, min_height=13)
+        
+    def keypress(self, size, key):
+        if key in ['shift tab']:
+            return super().keypress(size, 'up')
+        elif key in ['tab']:
+            return super().keypress(size, 'down')
+        elif key in ['esc'] + arrow_left:
+            self.close()
+            return None
+        k = key.upper()
+        for l in self._labels:
+            if l == '':
+                continue
+            if k == l[-1] and (not self._active or k in self._active):
+                self.close()
+                urwid_frame.keypress(screen_size, key)
+                return None
+        return super().keypress(size, key)
 
 # ---------------------------------------------------------------------------
 
@@ -1488,7 +1572,7 @@ def launch(app_core, secr, args):
             ('evenBold', 'white,underline', 'dark gray', 'standout'),
             ('odd', 'white', 'black', 'standout'),
             ('oddBold', 'white,underline', 'black', 'standout'),
-            ('header', 'black', 'light green', 'underline'),
+            ('header', 'black', 'dark green', 'underline'),
             ('selected', 'black', 'light red', 'standout'),
             ('selectedPrivate', 'black', 'light blue', 'standout'),
             ('cypherlink', 'light blue,underline', 'dark gray', 'standout')
