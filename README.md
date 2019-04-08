@@ -3,7 +3,7 @@ A family of Python clients for Secure Scuttlebutt
 
 ## Context and Prerequisits
 
-SurfCity is a family of pure Python-based chat clients for Secure Scuttlebutt
+SurfCity is a family of Python-based chat clients for Secure Scuttlebutt
 (SSB), currently in pre-alpha stage.  See
 [https://www.scuttlebutt.nz/](https://www.scuttlebutt.nz/) for more
 details about the SSB community and other SSB clients.
@@ -38,7 +38,7 @@ just have this server up and running before you start SurfCity.
 ## How to install
 
 ```
-pip install surfcity
+pip3 install surfcity
 ```
 
 or if you grabbed the source code:
@@ -91,6 +91,14 @@ Four screenshots of the default URWID-based TUI (dark mode)
 ![four color modes for the URWID-based SSB-TUI](img/urwid-modes.png)
 
 More color modes of the URWID TUI: light, amber, green, monochromatic
+
+---
+
+![screenshot of SurfCity on Android (in Termux)](img/urwid-on-android.png)
+
+SurfCity runs inside the Android Termux app in touchscreen mode! The
+'back' button is not integrated: touch the upper left corner for going
+back, and the upper right corner for accessing the menu.
 
 ---
 
