@@ -154,19 +154,22 @@ class SURFCITY_DB:
         self.conn.execute(sql, (k,v))
         self.conn.commit()
 
-    def _get_feed_ndx(self, author):
-        # returns the index i for the author, adds him/her if necessary
+    def _get_feed_ndx(self, feedID):
+        # returns the index i for the given feed, adds it if necessary
+        if feedID[0] != '@':
+            s = traceback.format_exc()
+            raise Exception(f"should start with @: {feedID}\n{s}")
         try:
             sql = 'SELECT i FROM ssb_feed WHERE str = ? LIMIT 1;'
-            res = self.conn.execute(sql, (author,)).fetchone()
+            res = self.conn.execute(sql, (feedID,)).fetchone()
             return res[0]
         except Exception as e:
             # traceback.print_stack()
             sql = 'INSERT INTO ssb_feed (str) VALUES (?);'
-            self.conn.execute(sql, (author,))
+            self.conn.execute(sql, (feedID,))
             self.conn.commit()
             sql = 'SELECT i FROM ssb_feed WHERE str = ? LIMIT 1;'
-            return self.conn.execute(sql, (author,)).fetchone()[0]
+            return self.conn.execute(sql, (feedID,)).fetchone()[0]
 
     def add_feedID(self, feedId):
         self._get_feed_ndx(feedId)
@@ -195,13 +198,17 @@ class SURFCITY_DB:
         lst = []
         sql = "SELECT str,val,attr FROM ssb_feed INNER JOIN ssb_about ON feed = i"
         for c in self.conn.execute(sql):
+            if pattern.search(c[0]):
+                if not c[0] in lst:
+                    lst.append(c[0])
+                continue
             if c[2] in ['myname', 'name']:
-                if pattern.search(c[0]):
+                if pattern.search(c[1]) and not c[0] in lst:
                     lst.append(c[0])
                 continue
             try: # c[2] == 'named':
                 for s in json.loads(c[1]):
-                    if pattern.search(s):
+                    if pattern.search(s) and not c[0] in lst:
                         lst.append(c[0])
                         break
             except:
@@ -350,7 +357,10 @@ class SURFCITY_DB:
                 lst.append(rec[0])
         return lst[1:]
             
-    def add_key(self, key, msgName):
+    def add_msg_link(self, key, msgName):
+        if key[0] != '%':
+            s = traceback.format_exc()
+            raise Exception(f"should start with %: {key}\n{s}")
         key = base64.b64decode(key.split('.')[0])
         i = self._get_feed_ndx(msgName[0])
         try:
@@ -364,7 +374,7 @@ class SURFCITY_DB:
             pass # key already exists
         return i
 
-    def get_msgName(self, key):
+    def get_msg_name(self, key):
         key2 = base64.b64decode(key.split('.')[0])
         try:
             sql = 'SELECT str,seqno FROM ssb_feed INNER JOIN ssb_key_sha256 ' +\
@@ -378,7 +388,7 @@ class SURFCITY_DB:
         # ts is in seconds since Jan 1, 1970
         # msgName = msg['this'].split(':')
         if key:
-            self.add_key(key, msgName)
+            self.add_msg_link(key, msgName)
         i = self._get_feed_ndx(msgName[0])
         try:
             # msg = json.dumps(msg)
@@ -578,8 +588,8 @@ if __name__ == '__main__':
     store.set_config('id', 'alice.id')
     print('id', store.get_config('id'))
 
-    store.add_key(b'\x01\x02\x00', ['alice.id', 1])
-    print('get_msgName', store.get_msgName(b'\x01\x02\x00'))
+    store.add_msg_link(b'\x01\x02\x00', ['alice.id', 1])
+    print('get_msg_name', store.get_msg_name(b'\x01\x02\x00'))
 
     store.add_msg({
         'this': ['alice.id',3],

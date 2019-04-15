@@ -9,6 +9,7 @@ def editor(lines):
     # expects an array of lines, returns an array of lines if modified else None
     modif = False
     curr = 0
+    print(f"EDLIN: loading {len(lines)} line(s), current line is {curr+1}")
     while True:
         cmd = input('*')
         if len(cmd) == 0:
@@ -31,6 +32,7 @@ def editor(lines):
 
   <num>    make line <num> the current line
 
+  a        append text after current line
   d        delete current line
   i        insert text before current line
   l        list from current line to end
@@ -84,9 +86,11 @@ def editor(lines):
             if curr == len(lines) and curr > 0: curr -= 1
             modif = True
             continue
-        if cmd == 'i':
+        if cmd in ['a', 'i']:
             if rng:
-                if rng[0] != rng[1] or rng[0] > len(lines):
+                if rng[0] != rng[1] or \
+                   (cmd == 'i' and rng[0] > len(lines)) or \
+                   (cmd == 'a' and rng[0] >= len(lines)):
                     print("invalid range")
                     continue
             else:
@@ -97,10 +101,17 @@ def editor(lines):
                 ln = input()
                 if ln == '.': break
                 new.append(ln)
-            lines = lines[:rng[0]] + new + lines[rng[0]:]
-            curr = rng[0] + len(new)
-            if curr == len(lines) and curr > 0: curr -= 1
-            print(f"{len(new)} line(s) inserted")
+            if cmd == 'i':
+                lines = lines[:rng[0]] + new + lines[rng[0]:]
+                curr = rng[0] + len(new)
+                if curr == len(lines) and curr > 0: curr -= 1
+                print(f"{len(new)} line(s) inserted")
+            else:
+                lines = lines[:rng[0]+1] + new + lines[rng[0]+1:]
+                curr = rng[0] + 1 + len(new)
+                if curr >= len(lines) and curr > 0: curr = len(lines)-1
+                print(f"{len(new)} line(s) appended")
+            print(f"current line is {curr+1}")
             if len(new) > 0: modif = True
             continue
         if cmd in ['l', 'p']:
@@ -134,10 +145,11 @@ if __name__ == '__main__':
     else:
         fn = sys.argv[1]
         with open(fn, 'r') as f: buf = f.read()
-        if len(buf) > 0 and buf[-1] == '\n': buf = buf[:-1]
-        new = editor(buf.split('\n'))
-        if new:
-            with open(fn, 'w') as f: f.write('\n'.join(new) + '\n')
-            print(f"{len(new)} line(s) written to {fn}")
+        buf = buf[:-1] if len(buf) > 0 and buf[-1] == '\n' else buf
+        new = editor([] if buf == '' else buf.split('\n'))
+        if new != None:
+            buf = '' if new == [] else '\n'.join(new) + '\n'
+            with open(fn, 'w') as f: f.write(buf)
+            print(f"New content: {len(new)} line(s) written to {fn}")
 
 # eof

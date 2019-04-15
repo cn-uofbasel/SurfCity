@@ -61,7 +61,7 @@ def main(args=None):
 
     # get the user's id and secret from the ~/.ssb directory:
     secr = ssb.local.config.SSB_SECRET(args.secret)
-    app.init()
+    app.init(secr)
     app.the_db.open(args.db, secr.id)
     id_in_db = app.the_db.get_config('id')
     if id_in_db != secr.id:
@@ -91,7 +91,7 @@ def main(args=None):
         os.environ['KIVY_NO_ARGS'] = '1'
         import surfcity.ui.kivy as ui
 
-    # logging.basicConfig(filename=f"test-{args.ui}.log",level=logging.INFO)
+    logging.basicConfig(filename=f"test-{args.ui}.log",level=logging.INFO)
     ui.launch(app, secr, args)
 
 # ---------------------------------------------------------------------------

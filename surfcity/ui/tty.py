@@ -8,6 +8,7 @@ import logging
 import os
 import random
 import re
+import readline
 import shutil
 import string
 import subprocess
@@ -20,13 +21,31 @@ import tty
 
 app = None
 import surfcity.app.net  as net
+import surfcity.app.util as util
+import surfcity.edlin
 
 logger = logging.getLogger('surfcity_ui_tty')
-ui_descr = " (tty ui, v2019-04-02)"
+ui_descr = " (tty ui, v2019-04-08)"
 
 error_message = None
 
+draft_text = None
+draft_private_text = None
+draft_private_recpts = []
+
 kbd = None
+
+# ----------------------------------------------------------------------
+
+def save_draft(txt, recpts):
+    global draft_text, draft_private_text, draft_private_recpts
+    if recpts != None:
+        draft_private_text = txt
+        draft_private_recpts = recpts
+        app.the_db.set_config('draft_private_post', json.dumps((txt, recpts)))
+    else:
+        draft_text = txt
+        app.the_db.set_config('draft_post', txt)
 
 # ----------------------------------------------------------------------
 
@@ -151,41 +170,6 @@ does not come with a huge GByte storage requirement.
                 logs.'''
 ]
 
-def my_format(txt, style='left'):
-    txt = txt.split('\n')
-    out = []
-    # w = 79
-    # if style in ['center', 'para']:
-    w = shutil.get_terminal_size((80, 25))[0] - 1
-    if style == 'center':
-        for t in txt:
-            out.append(' '* ((w-len(t))//2) + t)
-    elif style == 'rule':
-        for t in txt:
-            t = ' ' + '.'* ((w-len(t))//2 - 1) + t
-            out.append(t + '.'*(w-len(t)))
-    elif style == 'para':
-        for t in txt:
-            while len(t) > w-4:
-                i = w-5
-                while i > 0 and not t[i] in ' \t':
-                    i -= 1
-                if i <= 0:
-                    out.append('|  ' + t[0:w-5])
-                    t = t[w-4:]
-                else:
-                    out.append('|  ' + t[0:i])
-                    while t[i] in ' \t' and i < len(t)-1:
-                        i += 1
-                    t = t[i:]
-            out.append('|  ' + t)
-    elif style == 'repeat':
-        out = [ (txt[0] * w)[:w] ]
-    else:
-        out = txt
-
-    return out
-
 # ----------------------------------------------------------------------
 
 class Keyboard:
@@ -196,12 +180,11 @@ class Keyboard:
         self.q = asyncio.Queue(loop=self.loop)
         self.old_settings = termios.tcgetattr(fd)
         # tty.setraw(fd)
-        tty.setcbreak(fd, termios.TCSANOW)
+        tty.setcbreak(fd, termios.TCSADRAIN)
         self.new_settings = termios.tcgetattr(fd)
         # self.new_settings[0] &= ~termios.ICANON
         # self.new_settings[0] &= ~ (termios.BRKINT | termios.IGNBRK)
         self.new_settings[1] |= termios.OPOST | termios.ONLCR
-        # termios.tcsetattr(fd, termios.TCSADRAIN, self.new_settings)
         self.resume()
 
     def _upcall(self):
@@ -222,12 +205,23 @@ class Keyboard:
             return cmd
         return 'key sequence'
 
+    def get_until_dot(self):
+        self.pause()
+        print("(end input with a single dot on a line)")
+        lines = []
+        while True:
+            ln = input()
+            if ln == '.':
+                break
+            lines.append(ln)
+        self.resume()
+        return lines
+
     def pause(self):
         self.loop.remove_reader(sys.stdin)
-        fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, ~os.O_NONBLOCK)
-        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW,
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN,
                           self.old_settings)
-        pass
+        fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, ~os.O_NONBLOCK)
 
     def resume(self):
         termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN,
@@ -262,11 +256,9 @@ def render_lines(lns, at_bottom=True):
         # os.system(f"stty tty; tput reset; less {f.name}")
         # subprocess.run(f"less -c -h0 -S +G {f.name}; tput rmcup ", shell=True, executable='/bin/bash')
         if at_bottom:
-            cmd = f"set > t.txt; less -c -h0 -S +G -R {f.name}"
+            cmd = f"less -c -h0 -S +G -R {f.name}"
         else:
-            cmd = f"less -c -h0 -S -R {f.name}".split(' ')
-            cmd = f"export TERM=ansi; less {f.name}"
-            print(cmd)
+            cmd = f"less -c -h0 -S -R {f.name}"
         subprocess.run(cmd, shell=True, start_new_session=True)
         # subprocess.run(["stty", "sane"])
         # subprocess.run(["tput", "rs1"])
@@ -275,6 +267,125 @@ def render_lines(lns, at_bottom=True):
         # termios.tcsetattr(sys.stdout.fileno(), termios.TCSADRAIN, old_out)
         kbd.resume()
     
+# ----------------------------------------------------------------------
+# aux procedures
+
+def my_format(txt, style='left'):
+    txt = txt.split('\n')
+    out = []
+    # w = 79
+    # if style in ['center', 'para']:
+    w = shutil.get_terminal_size((80, 25))[0] - 1
+    if style == 'center':
+        for t in txt:
+            out.append(' '* ((w-len(t))//2) + t)
+    elif style == 'rule':
+        for t in txt:
+            t = ' ' + '.'* ((w-len(t))//2 - 1) + t
+            out.append(t + '.'*(w-len(t)))
+    elif style == 'para':
+        for t in txt:
+            while len(t) > w-3:
+                i = w-5
+                while i > 0 and not t[i] in ' \t':
+                    i -= 1
+                if i <= 0:
+                    out.append('| ' + t[0:w-4])
+                    t = t[w-4:]
+                else:
+                    out.append('| ' + t[0:i])
+                    while t[i] in ' \t' and i < len(t)-1:
+                        i += 1
+                    t = t[i:]
+            out.append('| ' + t)
+    elif style == 'repeat':
+        out = [ (txt[0] * w)[:w] ]
+    else:
+        out = txt
+
+    return out
+
+async def aux_get_recpts(secr):
+    global draft_text, draft_private_text, draft_private_recpts
+    print()
+    if draft_private_recpts == []:
+        print("Private message: enter the recipients, one per line")
+        draft_private_recpts = kbd.get_until_dot()
+        save_draft(draft_private_text, draft_private_recpts)
+
+    while True:
+        print("Recipients:")
+        good, bad = util.parse_recpts(secr, app, draft_private_recpts)
+        save_draft(draft_private_text, bad + good)
+        print('  ' + '\n  '.join(draft_private_recpts))
+        if bad != []:
+            while True:
+                print("Invalid recipients. Now what? (Cancel/Edit) [E]: ", end='', flush=True)
+                cmd = await kbd.getcmd()
+                print()
+                if cmd.lower() == 'c':
+                    print("canceled")
+                    return None
+                if cmd.lower() in ['e', 'enter']:
+                    break
+            print("starting the line editor ...")
+            kbd.pause()
+            new = surfcity.edlin.editor(draft_private_recpts)
+            kbd.resume()
+            if new:
+                save_draft(draft_private_text, new)
+            continue
+            
+        print("Recipients OK? (Yes/Cancel/Edit) [E]: ", end='', flush=True)
+        cmd = await kbd.getcmd()
+        if cmd.lower() == 'c':
+            print("\ncanceled")
+            return None
+        if cmd.lower() in ['e', 'enter']:
+            print("\nstarting the line editor ...")
+            kbd.pause()
+            new = surfcity.edlin.editor(draft_private_recpts)
+            kbd.resume()
+            if new:
+                save_draft(draft_private_text, new)
+            continue
+        if cmd.lower() == 'y':
+            print()
+            return draft_private_recpts
+        print()
+
+async def aux_get_body(title, recpts, is_private=False):
+    global draft_text, draft_private_text, draft_private_recpts
+    body = draft_private_text if is_private else draft_text
+    if not body:
+        print(title + ", new text (terminate with a single '.' on a line):")
+        body = kbd.get_until_dot()
+        body = [', '.join(recpts), ''] + body
+        save_draft(body, draft_private_recpts if is_private else None)
+
+    while True:
+        print(body)
+        print(f"{title}:")
+        if len(body) > 0:
+            print('| ' + '\n| '.join(body))
+        print("Text OK? (Yes_go_to_preview/Cancel/Edit) [E]: ", end='', flush=True)
+        cmd = await kbd.getcmd()
+        if cmd.lower() == 'c':
+            print("\ncanceled")
+            return None
+        if cmd.lower() in ['e', 'enter']:
+            print("\nstarting the line editor ...")
+            kbd.pause()
+            new = surfcity.edlin.editor(body)
+            kbd.resume()
+            if new != None:
+                body = new
+                save_draft(body, draft_private_recpts if is_private else None)
+            continue
+        print()
+        if cmd.lower() == 'y':
+            return body
+
 # ----------------------------------------------------------------------
 
 async def cmd_backward(secr, args, list_state):
@@ -321,8 +432,32 @@ async def cmd_compose(secr, args, list_state):
         print("not implemented")
         return
     else: # private mode
-        print("not implemented")
-        pass
+        recpts = await aux_get_recpts(secr)
+        if recpts == None: return
+        while True:
+            body = await aux_get_body("Message body", recpts, True)
+            if body == None: return
+            txt =  my_format(" recipient(s) ", 'rule')
+            txt += my_format('\n'.join(recpts), 'para')
+            txt += my_format(" private message body ", 'rule')
+            txt += my_format('\n'.join(body), 'para')
+            txt += my_format("", 'rule')
+            print('\n' + '\n'.join(txt) + '\n')
+            while True:
+                print("OK? (Back/Cancel/Send) [B]: ", end='', flush=True)
+                cmd = await kbd.getcmd()
+                if cmd.lower() == 'c':
+                    print("\ncanceled")
+                    return
+                if cmd.lower() == 's':
+                    app.submit_private_post(secr, '\n'.join(body)+'\n', recpts)
+                    print("\nmessage queued")
+                    save_draft(None, [])
+                    return
+                print()
+                if cmd.lower() in ['b', 'enter']:
+                    break
+            
 
 async def cmd_enter(secr, args, list_state):
     print()
@@ -668,6 +803,19 @@ async def scanner(secr, args):
 
 async def main(kbd, secr, args):
     global error_message
+    global draft_text, draft_private_text, draft_private_recpts
+
+    draft_text = app.the_db.get_config('draft_post')
+    priv = app.the_db.get_config('draft_private_post')
+    if priv != None:
+        try:
+            priv = json.loads(priv)
+            draft_private_text, draft_private_recpts = priv
+            if type(draft_private_text) == str:
+                draft_private_text = draft_private_text.split('\n')
+        except:
+            pass
+
     try:
         host = args.pub.split(':')
         port = 8008 if len(host) < 2 else int(host[1])
@@ -675,8 +823,10 @@ async def main(kbd, secr, args):
         host = host[0]
 
         if not args.offline:
-            net.init(secr.id, None)
+            send_queue = asyncio.Queue(loop=asyncio.get_event_loop())
+            net.init(secr.id, send_queue)
             try:
+                print(host, port, pubID)
                 api = await net.connect(host, port, pubID, secr.keypair)
             except Exception as e:
                 error_message = str(e) # traceback.format_exc()

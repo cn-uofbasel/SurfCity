@@ -25,7 +25,7 @@ from ssb.shs.network import SHSClient, SHSServer
 import ssb.local.config
 
 import logging
-logger = logging.getLogger('ssb_app_net')
+logger = logging.getLogger('ssb/app/net')
 
 api = MuxRPCAPI()
 my_feed_id = None
@@ -35,6 +35,7 @@ my_feed_send_queue = None
 
 def init(feedID, send_queue):
     global my_feed_id, my_feed_send_queue
+    logger.info("init net")
     my_feed_id = feedID
     my_feed_send_queue = send_queue
 
@@ -124,6 +125,7 @@ drainers = {}
 
 async def drain(connection, req):
     global my_feed_send_queue
+    logger.info(f"drain() started {req}")
     while True:
         logger.info("drain loop")
         msg = await my_feed_send_queue.get()
@@ -143,6 +145,8 @@ def create_history_stream(connection, req_msg, sess=None):
     logger.info('RECV [%d] createHistoryStream id=%s', req_msg.req, a['id'])
     if not my_feed_id or a['id'] != my_feed_id or not my_feed_send_queue:
         connection.send(True, end_err = True, req = - req_msg.req)
+        if a['id'] == "@AiBJDta+4boyh2USNGwIagH/wKjeruTcDX2Aj1r/haM=.ed25519":
+            logger.info(f"my_feed_send_queue {my_feed_send_queue} failed")
         return
     lim = -1 if not 'limit' in a else a['limit']
     seqno = 1 if not 'sequence' in a else a['sequence']
@@ -159,6 +163,7 @@ def create_history_stream(connection, req_msg, sess=None):
         #   seq += 1
         try:
             # drainers[req_msg.req] = 
+            logger.info(f"infinite loop in createHist")
             asyncio.ensure_future(drain(connection, req_msg.req)) # drainers[req_msg.req])
         except:
             s = traceback.format_exc()

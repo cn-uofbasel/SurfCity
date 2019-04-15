@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# ssb/app_core.py
+# surfcity/app/core.py
 
 import asyncio
 from   asyncio import ensure_future
@@ -16,13 +16,15 @@ import sys
 import time
 import traceback
 
-import surfcity.app.db  as db
-import surfcity.app.net as net
-import ssb.local.config as config
+import surfcity.app.db
+import surfcity.app.net     as net
+import surfcity.app.soliton
+import ssb.local.config     as config
 
 logger = logging.getLogger('ssb_app_core')
 
 the_db = None
+the_soliton = None
 
 # frontier_window = 60*60*24*180 # 180 days
 frontier_window = 60*60*24*7 * 4 # 4 weeks
@@ -63,6 +65,8 @@ def feed2name(feedID):
     return n
 
 def update_about_name(feedID, name=None, named=None, myalias=None):
+    if feedID[0] != '@':
+        return
     if name: # chosen by feedID itself
         the_db.update_about(feedID, 'name', name)
     if named: # assigned by others
@@ -97,52 +101,6 @@ def counter_reset(ntfy=None):
 
 # ----------------------------------------------------------------------
 
-def mstr2dict(secr, mstr):
-    if not mstr:
-        return None
-    d = json.loads(mstr)
-    if type(d) != dict:
-        return None
-    if not 'value' in d:
-        # logger.info(f" ** mstr2dict: new envelope for {d['author']}:{d['sequence']}")
-        # logger.info(mstr)
-        m = config.formatMsg(d['previous'], d['sequence'], d['author'],
-                             d['timestamp'], d['hash'], d['content'],
-                             d['signature'])
-        # logger.info(m)
-        key = hashlib.sha256(m.encode('utf8')).digest()
-        key = f"%{base64.b64encode(key).decode('ascii')}.sha256"
-        d = { 'key': key, 'value': d, 'timestamp': int(time.time()*1000) }
-        mstr = json.dumps(d, indent=2);
-        # logger.info(f" ** mstr2dict new key {key} for {d['value']['author']}:{d['value']['sequence']}")
-    v = d['value']
-    if not 'content' in v:
-        return None
-    if type(v['content']) == str:
-        c = base64.b64decode(v['content'].split('.')[0]) # remove the .box
-        c = secr.unboxPrivateData(c)
-        if c != None:
-            # logger.info(c)
-            try:
-                v['content'] = json.loads(c.decode('utf8'))
-            except:
-                v['content'] = '?decoding error?'
-            v['private'] = True
-    c = v['content']
-    if type(c) == dict and c['type'] == 'post':
-        the_db.add_key(d['key'], [v['author'], v['sequence']])
-    v['raw'] = mstr
-    v['key'] = d['key']
-    return v
-
-async def get_msgs(secr, name, limit=1):
-    msgs = []
-    async for mstr in net.get_msgs(name, limit):
-        m = mstr2dict(secr, mstr)
-        if m:
-            msgs.append(m)
-    return msgs
-
 async def id_get_frontier(secr, author, out=None):
     # returns (seqno,key)
     logger.debug(f" id_get_frontier{author}")
@@ -156,7 +114,7 @@ async def id_get_frontier(secr, author, out=None):
         if out:
             out(star[starndx] + '\r', end='', flush=True)
             starndx = (starndx+1) % len(star)
-        msgs = await get_msgs(secr, [author,high], 1)
+        msgs = await the_soliton.fetch_by_name([author,high], 1)
         if len(msgs) == 0:
             break
         low, high = high, 2*high
@@ -168,7 +126,7 @@ async def id_get_frontier(secr, author, out=None):
             out(star[starndx] + '\r', end='', flush=True)
             starndx = (starndx+1) % len(star)
         seqno = int((high+low)/2)
-        msgs = await get_msgs(secr, [author,seqno], 1)
+        msgs = await the_soliton.fetch_by_name([author,seqno], 1)
         if len(msgs) != 0:
             low = seqno
             key = msgs[0]['key']
@@ -252,11 +210,12 @@ def process_msg(msg, me, backwards=False):
             the_db.add_tip_to_thread(mkey, mkey)
             txt = text2synopsis(msg['content']['text'])[:256]
             the_db.update_thread_title(mkey, txt)
-    elif t == 'about' and 'name' in msg['content'] and \
-              'about' in msg['content'] and msg['content']['name'] != 'undefined':
+    elif t == 'about' and 'about' in msg['content'] and \
+         msg['content']['about'][:1] == '@' and 'name' in msg['content'] and \
+         msg['content']['name'] != 'undefined':
         a = msg['content']['about'] 
         if a == msg['author']:
-            update_about_name(msg['author'], name=msg['content']['name'])
+            update_about_name(a, name=msg['content']['name'])
         elif msg['author'] == me:
             update_about_name(a, myalias=msg['content']['name'])
         else:
@@ -317,7 +276,7 @@ async def scan_my_log(secr, args, out=None, ntfy=None):
     while start > 1:
         # scan backwards
         start = 1 if (start - 40) < 1 else start - 40
-        msgs = await get_msgs(secr, [secr.id, start], end - start)
+        msgs = await the_soliton.fetch_by_name([secr.id, start], end - start)
         msgs.reverse()
         # ts = None
         for msg in msgs:
@@ -361,7 +320,7 @@ async def scan_wavefront(me, secr, args, out=None, ntfy=None):
                     end = low
                 if start < 1:
                     start = 1
-                msgs = await get_msgs(secr, [f,start], end - start)
+                msgs = await the_soliton.fetch_by_name([f,start], end - start)
                 msgs.reverse()
                 # ts = None
                 for m in msgs:
@@ -430,7 +389,7 @@ async def scan_wavefront(me, secr, args, out=None, ntfy=None):
                     end = low
                 if start < 1:
                     start = 1
-                msgs = await get_msgs(secr, [f,start], end - start)
+                msgs = await the_soliton.fetch_by_name([f,start], end - start)
                 msgs.reverse()
                 # ts = None
                 for m in msgs:
@@ -444,7 +403,7 @@ async def scan_wavefront(me, secr, args, out=None, ntfy=None):
             out and out("\nList refresh requested")
             return
         # forward
-        msgs = await get_msgs(secr, [f,front+1], 5)
+        msgs = await the_soliton.fetch_by_name([f,front+1], 5)
         if len(msgs) > 0:
             for m in msgs:
                 process_msg(m, me, backwards=False)
@@ -489,19 +448,19 @@ async def mk_convo_list(secr, args, cache_only): # newest thread first
                 if k in done:
                     continue
                 done.append(k)
-                nm = the_db.get_msgName(k)
+                nm = the_soliton.link_to_name(k)
                 if not nm:
                     continue
                 rec = the_db.get_post(nm)
                 m = None
                 if rec:
-                    m = mstr2dict(secr, rec[0])
+                    m = the_soliton.mstr2dict(rec[0])
                     if m:
                         m['timestamp'] = rec[1]
                 if not m:
                     if args.offline or cache_only:
                         continue
-                    m = await get_msgs(secr, nm)
+                    m = await the_soliton.fetch_by_name(nm)
                     if len(m) == 0:
                         continue
                     m = m[0]
@@ -663,21 +622,21 @@ async def expand_thread(secr, t, args, cache_only,
         if k in done:
             continue
         done.append(k)
-        nm = the_db.get_msgName(k)
+        nm = the_soliton.link_to_name(k)
         if not nm:
             # logger.info(f"no name for {k}")
             continue
         r = the_db.get_post(nm)
         m = None
         if r:
-            m = mstr2dict(secr, r[0])
+            m = the_soliton.mstr2dict(r[0])
             if m:
                 m['timestamp'] = r[1]
         if not m:
             if args.offline or cache_only:
                 # logger.info(f"cache_only")
                 continue
-            m = await get_msgs(secr, nm)
+            m = await the_soliton.fetch_by_name(nm)
             if len(m) == 0:
                 # logger.info(f"cannot load msg")
                 continue
@@ -705,7 +664,7 @@ async def expand_thread(secr, t, args, cache_only,
                 if type(b) == str:
                     b = [b]
                 for r in b:
-                    nm = the_db.get_msgName(r)
+                    nm = the_db.link_to_name(r)
                     if nm and not nm in done:
                         queue.append(nm)
         '''
@@ -731,32 +690,15 @@ async def expand_thread(secr, t, args, cache_only,
         t = text2synopsis(m['content']['text'], ascii=ascii)
         txt.append( (utc2txt(m['timestamp']), n, t) )
     # if len(msgs2) == 0:
-    #     nm = the_db.get_msgName(t)
+    #     nm = the_db.link_to_name(t)
     #     txt.append( ('?', '?', nm) ) # f"-- empty thread? {nm}")
     return (msgs, txt, recps != [])
 
 
-def my_cb(secr, data, ntfy=None):
-    # logger.info(f" my_cb {type(data)} <{str(data)[:60]}>")
-    try:
-        msg = mstr2dict(secr, data.decode('utf8'))
-        if msg:
-            # logger.info(f"my_cb: {msg}")
-            process_msg(msg, secr.id)
-            front,_ = the_db.get_id_front(msg['author'])
-            if msg['sequence'] > front:
-                the_db.update_id_front(msg['author'],
-                                       msg['sequence'], msg['key'])
-                counter_add(0,1,ntfy)
-                # output_log(f"{msg['author']}:{msg['sequence']}")
-            else:
-                pass
-                # output_log("** LOW {msg['author']}:{msg['sequence']}")
-    except Exception as e:
-        logger.info(" ** my_cb exception %s", str(e))
-        logger.info(" ** %s", traceback.format_exc())
-        pass
-
+def incoming_cb(msg ,me, ntfy):
+    process_msg(msg, me)
+    counter_add(0, 1, ntfy)
+    
 async def process_new_friends(secr, out=None, ntfy=None):
     # logger.info("process_new_friends() starting")
     following = the_db.get_following(secr.id)
@@ -767,11 +709,11 @@ async def process_new_friends(secr, out=None, ntfy=None):
             if front < 1:
                 out and out(f"Probe frontier for {feed}")
                 front, key = await id_get_frontier(secr, feed, out)
-                msgs = await get_msgs(secr, (feed,front))
+                msgs = await the_soliton.fetch_by_name((feed,front))
                 process_msg(msgs[0], secr.id)
                 the_db.update_id_front(feed, front, key)
-            net.start_feed_watching((feed,front+1),
-                                    lambda data: my_cb(secr,data,ntfy))
+            the_soliton.rd_start((feed,front+1),
+                                 lambda msg: incoming_cb(msg, secr.id, ntfy))
     except:
         logger.exception("process_new_friend")
         print("exception in process_new_friend()")
@@ -779,27 +721,29 @@ async def process_new_friends(secr, out=None, ntfy=None):
 
 # ----------------------------------------------------------------------
 
-async def push(msg):
-    try:
-        net.my_feed_send_queue.put(msg)
-    except Exception as e:
-        logger.info(" ** push %s", str(e))
-        logger.info(" ** %s", traceback.format_exc())
+# async def push(content):
+#     try:
+#         the_soliton.wr(content) # net.my_feed_send_queue.put(content)
+#     except Exception as e:
+#         logger.info(" ** push %s", str(e))
+# <        logger.info(" ** %s", traceback.format_exc())
     
 def submit_public_post(secr, txt, root=None, branch=None):
     # logger.info('public_post()')
-    seq, key = the_db.get_id_front(secr.id)
     txt = {
         "type": "post",
         "text": txt,
         "recps": None
     }
-    if root:
-        txt['root'] = root
-    if branch:
-        txt['branch'] = branch
-    msg = config.formatMsg(key, seq+1, secr.id,
-                          int(time.time() * 1000),
+    if root:   txt['root'] = root
+    if branch: txt['branch'] = branch
+    the_soliton.wr(msg)
+    return
+
+    '''
+    sig = base64.b64encode(secr.sign(msg.encode('utf8'))).decode('ascii') +\
+    seq, key = the_db.get_id_front(secr.id)
+    msg = config.formatMsg(key, seq+1, secr.id, int(time.time() * 1000),
                           'sha256', txt, None)
     # logger.info(msg)
     sig = base64.b64encode(secr.sign(msg.encode('utf8'))).decode('ascii') +\
@@ -830,22 +774,29 @@ def submit_public_post(secr, txt, root=None, branch=None):
 
     # logger.info("put public msg into queue")
     asyncio.ensure_future(push(msg))
+    '''
 
-def submit_private_post(secr, txt, root=None, branch=None):
-    # logger.info('private_post()')
-    seq, key = the_db.get_id_front(secr.id)
-    recps = ['@AiBJDta+4boyh2USNGwIagH/wKjeruTcDX2Aj1r/haM=.ed25519', secr.id]
+def submit_private_post(secr, txt, recps, root=None, branch=None):
+    rlst = []
+    for r in recps:
+        for s in re.findall(r'(@.{44}.ed25519)', r[1]):
+            rlst.append(s)
+    logger.info(f"private_post(rlst={rlst})")
     txt = {
         "type": "post",
         "text": txt,
-        "recps": recps
+        "recps": rlst
     }
-    if root:
-        txt['root'] = root
-    if branch:
-        txt['branch'] = branch
-    box = secr.boxPrivateData(json.dumps(txt).encode('utf8'), recps)
+    if root:    txt['root'] = root
+    if branch:  txt['branch'] = branch
+    box = secr.boxPrivateData(json.dumps(txt).encode('utf8'), rlst)
     box = base64.b64encode(box).decode('ascii') + '.box'
+
+    the_soliton.wr(box)
+    return
+
+    '''
+    seq, key = the_db.get_id_front(secr.id)
     msg = config.formatMsg(key, seq+1, secr.id,
                           int(time.time() * 1000),
                           'sha256', box, None)
@@ -853,7 +804,7 @@ def submit_private_post(secr, txt, root=None, branch=None):
     sig = base64.b64encode(secr.sign(msg.encode('utf8'))).decode('ascii') +\
           '.sig.ed25519'
     msg = msg[:-2] + ',\n  "signature": "%s"\n}' % sig
-    # logger.info(msg)
+    logger.info(f"private_post: msg={msg}")
 
     jmsg = json.loads(msg)
     if not 'author' in jmsg or not 'signature' in jmsg:
@@ -878,14 +829,16 @@ def submit_private_post(secr, txt, root=None, branch=None):
 
     # logger.info("put msg into queue")
     asyncio.ensure_future(net.my_feed_send_queue.put(msg)) # 
+    '''
 
 # ----------------------------------------------------------------------
 
-def init():
-    global the_db
+def init(secr):
+    global the_db, the_soliton
 
     # logger.info("surcity app_core loading")
-    the_db = db.SURFCITY_DB()
+    the_db = surfcity.app.db.SURFCITY_DB()
+    the_soliton = surfcity.app.soliton.SSB_SOLITON(secr, the_db)
 
 # ----------------------------------------------------------------------
 

@@ -18,9 +18,10 @@ import urwid
 app = None
 import surfcity.app.net  as net
 import surfcity.app.db   as db
+import surfcity.app.util as util
 
 logger = logging.getLogger('surfcity_ui_urwid')
-ui_descr = " (urwid ui, v2019-04-06)"
+ui_descr = " (urwid ui, v2019-04-08)"
 
 the_loop = None # urwid loop
 
@@ -133,12 +134,12 @@ async def construct_threadList(secr, args,
                              extended_network = extended_network)
     blocked = app.the_db.get_following(secr.id, 2)
     odd = True
-    logger.info(str(lst))
+    # logger.info(str(lst))
     for t in lst:
         logger.info(f"thread {t}")
         msgs, txt, _ = await app.expand_thread(secr, t, args, cache_only, blocked)
-        logger.info(str(msgs))
-        logger.info(str(txt))
+        # logger.info(str(msgs))
+        # logger.info(str(txt))
         widgets.append(ThreadEntry(t, msgs, txt, 'odd' if odd else 'even'))
         odd = not odd
     return widgets
@@ -792,13 +793,16 @@ class PrivateConvoListBox(urwid.ListBox):
         if key in ['u', 'U']:
             return activate_user(urwid_convoList)
         if key in ['c']:
-            r = RecptsDialog()
-            e = EditDialog('Compose new PRIVATE message', is_private=True)
+            r = RecptsDialog(self.secr)
+            e = EditDialog(self.secr, 'Compose new PRIVATE message',
+                           is_private=True)
             c = ConfirmTextDialog(True)
             r.open(draft_private_recpts, lambda recpts:
-                   e.open(draft_private_text, lambda x: c.open(x, recpts,
-                         lambda : e.reopen(),
-                         lambda y: app.submit_private_post(self.secr,y,recpts))
+                   e.open(draft_private_text,
+                          lambda x: c.open(x, recpts,
+                              lambda : e.reopen(),
+                              lambda y: app.submit_private_post(self.secr,
+                                                                y, recpts))
                    )
             )
             return
@@ -885,24 +889,33 @@ class PrivateMessageBox(urwid.ListBox):
             return activate_help(urwid_privMsgList)
 
         if key in ['c']:
-            r = RecptsDialog()
-            e = EditDialog('Compose new PRIVATE message', is_private=True)
+            r = RecptsDialog(self.secr)
+            e = EditDialog(self.secr, 'Compose new PRIVATE message',
+                           is_private=True)
             c = ConfirmTextDialog(True)
             r.open(draft_private_recpts, lambda recpts:
-                   e.open(draft_private_text, lambda txt: c.open(txt, recpts,
-                         lambda : e.reopen(),
-                         lambda y: app.submit_private_post(self.secr,y,recpts))
+                   e.open(draft_private_text,
+                          lambda txt: c.open(txt, recpts,
+                             lambda : e.reopen(),
+                             lambda y: app.submit_private_post(self.secr,
+                                                               y,recpts))
                    )
             )
             return
         if key in ['r']:
             dest = self.title
-            e = EditDialog(f"Compose PRIVATE reply to {dest[dest.index('<'):]}",
+            e = EditDialog(self.secr,
+                           f"Compose PRIVATE reply to {dest[dest.index('<'):]}",
                            is_private=True)
             c = ConfirmTextDialog(True)
-            e.open(draft_private_text, lambda txt: c.open(txt, self.recpts,
+            recpts = util.lookup_recpts(self.secr, app, self.recpts)[0]
+            recpts = util.expand_recpts(self.secr, app, recpts)
+            logger.info(f"recpts: {recpts}")
+            e.open(draft_private_text,
+                   lambda txt: c.open(txt, recpts,
                            lambda : e.reopen(),
-                           lambda y: app.submit_private_post(self.secr,y,
+                           lambda y: app.submit_private_post(self.secr, y,
+                                                             recpts,
                                                              self.root,
                                                              self.branch))
             )
@@ -975,10 +988,11 @@ class MessageBox(urwid.ListBox):
             return activate_help(urwid_msgList)
         if key in ['c', 'r']:
             if key == 'c':
-                e = EditDialog(f"Compose PUBLIC message in new thread")
+                e = EditDialog(self.secr,
+                               f"Compose PUBLIC message in new thread")
                 root, branch = (None, None)
             else:
-                e = EditDialog("Compose PUBLIC reply in chat\n" + \
+                e = EditDialog(self.secr, "Compose PUBLIC reply in chat\n" + \
                                f"{self.title[8:50]}'")
                 root, branch = (self.root, self.branch)
             c = ConfirmTextDialog(False)
@@ -1159,7 +1173,8 @@ def save_draft(txt, recpts):
 
 class EditDialog(urwid.Overlay):
 
-    def __init__(self, bannerTxt, is_private=False):
+    def __init__(self, secr, bannerTxt, is_private=False):
+        self.secr = secr
         self.is_private = is_private
         header = urwid.Text( bannerTxt + '\n(use TAB to select buttons)',
                             align = 'center')
@@ -1208,10 +1223,13 @@ class EditDialog(urwid.Overlay):
             self.edit.set_edit_text(txt)
             self.edit.set_edit_pos(len(txt))
         elif self.is_private and draft_private_recpts:
-            if not draft_private_text or draft_private_text == '':
-                t = ', '.join(draft_private_recpts) + '\n\n'
-                self.edit.set_edit_text(t)
-                self.edit.set_edit_pos(len(t))
+            # if not draft_private_text:
+            # for r in draft_private_recpts:
+            # logger.info(f"XX {secr.id in r} {r}")
+            recpts = [r for r in draft_private_recpts if not self.secr.id in r]
+            t = ', '.join(recpts) + '\n\n'
+            self.edit.set_edit_text(t)
+            self.edit.set_edit_pos(len(t))
         self.callback = ok_callback
         self.set_focus_path([1, 'body'])
         the_loop.widget = self
@@ -1319,13 +1337,17 @@ class ConfirmTextDialog(urwid.Overlay):
         if pos < len(text):
             all.append(text[pos:len(text)])
         self.body_text.set_text(all)
+        logger.info(f"confirmTextDialog-open: type(recpts)={type(recpts)}")
+        logger.info(f"{str(recpts)}")
         if recpts:
+            logger.info(f"recipients: {recpts}")
             lst = ['Recipients:']
             for r in recpts:
-                nm = app.feed2name(r)
-                if nm:
-                    r = f"[@{nm}]({r})"
-                lst.append('  ' + r)
+                #nm = app.feed2name(re.findall(r'(@.{44}.ed25519)', r)[0])
+                #if nm:
+                #    r = f"[@{nm if nm[0] != '@' else nm[1:]}]({r})"
+                lst.append("  %-10s  %s" % (r[0][:10], r[1]))
+            lst += ['', 'Body:']
             self.recpts_text.set_text('\n'.join(lst))
         self.set_focus_path([1, 'body'])
         the_loop.widget = self
@@ -1348,7 +1370,8 @@ class ConfirmTextDialog(urwid.Overlay):
 
 class RecptsDialog(urwid.Overlay):
 
-    def __init__(self):
+    def __init__(self, secr):
+        self.secr = secr
         header = urwid.Text("Enter the recipients for a private msg, " + \
                             "one per line\n(use TAB to select buttons)",
                             align = 'center')
@@ -1392,7 +1415,7 @@ class RecptsDialog(urwid.Overlay):
         key = super().keypress(size, key)
 
     def open(self, recpts, ok_callback):
-        if recpts:
+        if recpts != None:
             self.edit.set_edit_text('\n'.join(recpts))
         self.callback = ok_callback
         self.set_focus_path([1, 'body'])
@@ -1404,40 +1427,25 @@ class RecptsDialog(urwid.Overlay):
 
     def _callback(self):
         recpts = self.edit.get_edit_text().replace(',', '\n').split('\n')
-        good, bad = [], []
-        addr = re.compile(r"(@.{44}.ed25519)")
-        for r in recpts:
-            r = r.strip()
-            if len(r) == 0:
-                continue
-            for i in addr.findall(r):
-                good.append(i)
-                break
-            else:
-                users = app.the_db.match_about_name(f"^{r[1:]}$"
-                                                    if r[0] == '@' else r)
-                logger.info(f"users: <{r}> {str(users)}")
-                if len(users) == 1:
-                    good.append(users[0])
-                else:
-                    bad.append(f"? {r}" if len(users) == 0 else f"?+ {r}")
-        lst = []
-        for r in list(set(good)):
-            nm = app.feed2name(r)
-            if nm:
-                r = f"[@{nm}]({r})"
-            lst.append(r)
-        good = lst
-        if len(good) + len(bad) == 0:
-            bad = ['add one recipient']
-        if len(good) + len(bad) >= 7:
-            bad = ['max 7 recipients'] + bad
+        good, bad = util.lookup_recpts(self.secr, app, recpts)
+        good = util.expand_recpts(self.secr, app, good)
         if len(bad) > 0:
-            self.edit.set_edit_text('\n'.join(bad + lst))
+            for r in good:
+                if r[0] == '':
+                    bad.append(r[1])
+                else:
+                    bad.append(f"[{r[0]}]({r[1]})")
+            self.edit.set_edit_text('\n'.join(bad))
             self.edit.set_edit_pos(len(bad[0]))
             self.set_focus_path([1, 'body'])
         else:
-            self.edit.set_edit_text('\n'.join(good))
+            lst = []
+            for r in good:
+                if r[0] == '':
+                    lst.append(f"[{r[1]}]({r[1]})")
+                else:
+                    lst.append(f"[{r[0]}]({r[1]})")
+            self.edit.set_edit_text('\n'.join(lst))
             self.close()
             self.callback(good)
         
