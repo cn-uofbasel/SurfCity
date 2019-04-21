@@ -25,7 +25,7 @@ import surfcity.app.util as util
 import surfcity.edlin
 
 logger = logging.getLogger('surfcity_ui_tty')
-ui_descr = " (tty ui, v2019-04-08)"
+ui_descr = "(tty ui, v2019-04-19)"
 
 error_message = None
 
@@ -255,10 +255,11 @@ def render_lines(lns, at_bottom=True):
         # old_out  = termios.tcgetattr(sys.stdout.fileno())
         # os.system(f"stty tty; tput reset; less {f.name}")
         # subprocess.run(f"less -c -h0 -S +G {f.name}; tput rmcup ", shell=True, executable='/bin/bash')
+        scrn = '' # "echo '\x1b[!p\x1b[?1049h\x1b[!p';" # \x1b[1;45r'; "
         if at_bottom:
-            cmd = f"less -c -h0 -S +G -R {f.name}"
+            cmd = scrn + f"less -c -h0 -S +G -R {f.name}"
         else:
-            cmd = f"less -c -h0 -S -R {f.name}"
+            cmd = scrn + f"less -c -h0 -S -R {f.name}"
         subprocess.run(cmd, shell=True, start_new_session=True)
         # subprocess.run(["stty", "sane"])
         # subprocess.run(["tput", "rs1"])
@@ -315,9 +316,11 @@ async def aux_get_recpts(secr):
 
     while True:
         print("Recipients:")
-        good, bad = util.parse_recpts(secr, app, draft_private_recpts)
-        save_draft(draft_private_text, bad + good)
-        print('  ' + '\n  '.join(draft_private_recpts))
+        good, bad = util.lookup_recpts(secr, app, draft_private_recpts)
+        both = bad + good
+        save_draft(draft_private_text, both)
+        both = [ f"[{r[0]}]({r[1]})" for r in util.expand_recpts(app, both) ]
+        print('  ' + '\n  '.join(both))
         if bad != []:
             while True:
                 print("Invalid recipients. Now what? (Cancel/Edit) [E]: ", end='', flush=True)
@@ -330,7 +333,7 @@ async def aux_get_recpts(secr):
                     break
             print("starting the line editor ...")
             kbd.pause()
-            new = surfcity.edlin.editor(draft_private_recpts)
+            new = surfcity.edlin.editor(both)
             kbd.resume()
             if new:
                 save_draft(draft_private_text, new)
@@ -343,8 +346,9 @@ async def aux_get_recpts(secr):
             return None
         if cmd.lower() in ['e', 'enter']:
             print("\nstarting the line editor ...")
+            new = util.expand_recpts(app, draft_private_recpts)
             kbd.pause()
-            new = surfcity.edlin.editor(draft_private_recpts)
+            new = surfcity.edlin.editor()
             kbd.resume()
             if new:
                 save_draft(draft_private_text, new)
@@ -358,9 +362,13 @@ async def aux_get_body(title, recpts, is_private=False):
     global draft_text, draft_private_text, draft_private_recpts
     body = draft_private_text if is_private else draft_text
     if not body:
-        print(title + ", new text (terminate with a single '.' on a line):")
+        print(title + ", new text:")
         body = kbd.get_until_dot()
-        body = [', '.join(recpts), ''] + body
+        if recpts:
+            recpts = util.expand_recpts(app, recpts)
+            recpts = [f"[{r[0]}]({r[1]})" for r in recpts]
+            print(f"-- {recpts}")
+            body = [', '.join(recpts), '' ] + body
         save_draft(body, draft_private_recpts if is_private else None)
 
     while True:
@@ -403,7 +411,7 @@ async def cmd_backward(secr, args, list_state):
         list_state['current'] = 0
         return
     current -= step
-    step = 5
+    step = os.get_terminal_size().lines // 4 - 1
     low, high = (current-step+1, current)
     if low < 0:
         low = 0
@@ -434,6 +442,10 @@ async def cmd_compose(secr, args, list_state):
     else: # private mode
         recpts = await aux_get_recpts(secr)
         if recpts == None: return
+        if secr.id in recpts:
+            recpts.remove(secr.id)
+        if len(recpts) == 0:
+            recpts = None
         while True:
             body = await aux_get_body("Message body", recpts, True)
             if body == None: return
@@ -514,7 +526,8 @@ async def cmd_forward(secr, args, list_state):
     if len(tlist) == 0:
         print("no threads")
         return
-    low, high = (current+1, current + 5)
+    step = os.get_terminal_size().lines // 4 - 1
+    low, high = (current+1, current + step)
     if high >= len(tlist):
         high = len(tlist) - 1
     if low > high:
@@ -581,12 +594,13 @@ async def cmd_privpubl(secr, args, list_state):
                                         cache_only = args.offline)
     else:
         list_state['show'] = 'Public'
-        print("pubic -- preparing list of thread ... ", end='', flush=True)
+        print("public -- preparing list of thread ... ", end='', flush=True)
         list_state['publ'] = app.mk_thread_list(secr, args,
-                                        cache_only = args.offline,
-                                        extended_network = not args.narrow)
+                                     cache_only = args.offline,
+                                     extended_network = list_state['extended'])
     print("done")
-    # print(list_state['show'].lower())
+    app.new_forw = 0
+    app.new_back = 0
     list_state['current'] = 0
     list_state['step'] = 1
 
@@ -597,11 +611,24 @@ async def cmd_refresh(secr, args, list_state):
     print(f"for FWD={app.new_forw}/BWD={app.new_back} new messages\n")
     app.new_forw = 0
     app.new_back = 0
-    t = list_state['publ'][list_state['current']]
-    lst = app.mk_thread_list(secr, args,
-                             cache_only = args.offline,
-                             extended_network = not args.narrow)
-    list_state['publ'] = lst
+    if list_state['show'] == 'Public':
+        i = len(list_state['publ'])
+        if list_state['current'] >= i:
+            list_state['current'] = 0 if i == 0 else i-1
+        t = None if i == 0 else list_state['publ'][list_state['current']]
+        lst = app.mk_thread_list(secr, args,
+                                 cache_only = args.offline,
+                                 extended_network = list_state['extended'])
+                                 # extended_network = not args.narrow)
+        list_state['publ'] = lst
+    else:
+        i = len(list_state['priv'])
+        if list_state['current'] >= i:
+            list_state['current'] = 0 if i == 0 else i-1
+        t = None if i == 0 else list_state['priv'][list_state['current']]
+        lst = await app.mk_convo_list(secr, args,
+                                      cache_only = args.offline)
+        list_state['priv'] = lst
     if t in lst:
         list_state['current'] = lst.index(t)
         list_state['step'] = 1
@@ -609,7 +636,44 @@ async def cmd_refresh(secr, args, list_state):
         list_state['current'] = 0
 
 async def cmd_reply(secr, args, list_state):
-    print("not implemented")
+    if list_state['show'] == 'Public':
+        print("not implemented")
+        return
+    else: # private mode
+        print()
+        recpts = list_state['priv'][list_state['current']]['recps']
+        recpts = list(set(recpts + [secr.id]))
+        recpts2 = copy.copy(recpts)
+        recpts2.remove(secr.id)
+        m = list_state['priv'][list_state['current']]['msgs'][-1]
+        if 'root' in m['content']:
+            root, branch = m['content']['root'], m['key']
+        else:
+            root, branch = m['key'], m['key']
+        while True:
+            body = await aux_get_body("Message body", recpts2, True)
+            if body == None: return
+            txt =  my_format(" recipient(s) ", 'rule')
+            txt += my_format('\n'.join(recpts), 'para')
+            txt += my_format(" private message body ", 'rule')
+            txt += my_format('\n'.join(body), 'para')
+            txt += my_format("", 'rule')
+            print('\n' + '\n'.join(txt) + '\n')
+            while True:
+                print("OK? (Back/Cancel/Send) [B]: ", end='', flush=True)
+                cmd = await kbd.getcmd()
+                if cmd.lower() == 'c':
+                    print("\ncanceled")
+                    return
+                if cmd.lower() == 's':
+                    app.submit_private_post(secr, '\n'.join(body)+'\n',
+                                            recpts, root, branch)
+                    print("\nmessage queued")
+                    save_draft(None, [])
+                    return
+                print()
+                if cmd.lower() in ['b', 'enter']:
+                    break
 
 async def cmd_status(secr, args, list_state):
     print("status")
@@ -629,9 +693,15 @@ async def cmd_status(secr, args, list_state):
 
 async def cmd_summary(secr, args, list_state):
     if list_state['show'] == 'Public':
+        i = len(list_state['publ'])
+        if list_state['current'] >= i:
+            list_state['current'] = 0 if i == 0 else i-1
         t = list_state['publ'][list_state['current']]
         _, txt, _ = await app.expand_thread(secr, t, args, None, ascii=True)
     else:
+        i = len(list_state['priv'])
+        if list_state['current'] >= i:
+            list_state['current'] = 0 if i == 0 else i-1
         c = list_state['priv'][list_state['current']]
         _, txt, _ = await app.expand_convo(secr, c, args, True, ascii=True)
     title = txt.pop(0)
@@ -748,6 +818,13 @@ async def cmd_xtended(secr, args, list_state):
     list_state['extended'] = ~list_state['extended']
     print("xtended friends' list of threads\nnow ", end='')
     print("enabled" if list_state['extended'] else "disabled")
+    print("public -- preparing list of thread ... ", end='', flush=True)
+    list_state['publ'] = app.mk_thread_list(secr, args,
+                                     cache_only = args.offline,
+                                     extended_network = list_state['extended'])
+    print("done")
+    app.new_forw = 0
+    app.new_back = 0
     print()
 
 async def cmd_about(secr, args, list_state):
@@ -817,22 +894,40 @@ async def main(kbd, secr, args):
             pass
 
     try:
-        host = args.pub.split(':')
-        port = 8008 if len(host) < 2 else int(host[1])
-        pubID = secr.id if len(host) < 3 else host[2]
-        host = host[0]
-
         if not args.offline:
+            host = args.pub.split(':')
+            if len(host) == 1:
+                pattern = host[0]
+                pubs = app.the_db.list_pubs()
+                for pubID in pubs:
+                    pub = pubs[pubID]
+                    if pattern in pubID or pattern in pub['host']:
+                        host, port = pub['host'], pub['port']
+                        break
+                else:
+                    raise Exception(f"no such pub '{pattern}'")
+            else:
+                port = 8008 if len(host) < 2 else int(host[1])
+                pubID = secr.id if len(host) < 3 else host[2]
+                host = host[0]
+
             send_queue = asyncio.Queue(loop=asyncio.get_event_loop())
             net.init(secr.id, send_queue)
             try:
-                print(host, port, pubID)
+                print("connecting to\n" + f"  {host}:{port}:{pubID}")
                 api = await net.connect(host, port, pubID, secr.keypair)
+            except OSError as e:
+                logger.info(f"OSError exc: {e}")
+                print(e)
+                return
             except Exception as e:
                 error_message = str(e) # traceback.format_exc()
                 # urwid.ExitMainLoop()
-                logger.info("exc while connecting")
-                raise e
+                logger.info(f"exc while connecting: {e}")
+                print(e)
+                return
+
+            app.the_db.add_pub(pubID, host, port)
             print("connected, scanning will start soon ...")
             asyncio.ensure_future(api)
 
@@ -843,7 +938,7 @@ async def main(kbd, secr, args):
 
         list_state = {
             'publ': app.mk_thread_list(secr, args, cache_only = args.offline,
-                                      extended_network = not args.narrow),
+                                       extended_network = False),
             'current': 0,
             'step': 1,
             'show': "Public",
@@ -870,9 +965,13 @@ async def main(kbd, secr, args):
                     print()
                 pass
 
-            prompt = "sc> "
+            if list_state['show'] == 'Public':
+                prompt = "sc_extd> "  if list_state['extended'] else \
+                         "sc_publ> "
+            else:
+                prompt = "sc_priv> "
             if app.new_forw > 0:
-                prompt = f"(+{app.new_forw})sc> "
+                prompt = f"(+{app.new_forw}){prompt}"
             print(prompt, end='', flush=True)
             num = ''
             while True:

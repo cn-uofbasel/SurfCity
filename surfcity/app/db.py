@@ -52,7 +52,7 @@ init_sql = [
             foreign key (feed) references ssb_feed (i)
 );''',
 '''CREATE TABLE IF NOT EXISTS ssb_pub (
-            feed integer,
+            feed integer unique,
             host text default '',
             port int default 8008,
             success_count int,

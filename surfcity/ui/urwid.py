@@ -21,7 +21,7 @@ import surfcity.app.db   as db
 import surfcity.app.util as util
 
 logger = logging.getLogger('surfcity_ui_urwid')
-ui_descr = " (urwid ui, v2019-04-08)"
+ui_descr = " (urwid ui, v2019-04-21)"
 
 the_loop = None # urwid loop
 
@@ -187,11 +187,6 @@ async def main(secr, args):
         logger.info(traceback.format_exc())
 
     try:
-        host = args.pub.split(':')
-        port = 8008 if len(host) < 2 else int(host[1])
-        pubID = secr.id if len(host) < 3 else host[2]
-        host = host[0]
-
         '''
         async def watchdog(host, port, pubID, keypair):
             await asyncio.sleep(20)
@@ -211,6 +206,22 @@ async def main(secr, args):
         '''
 
         if not args.offline:
+            host = args.pub.split(':')
+            if len(host) == 1:
+                pattern = host[0]
+                pubs = app.the_db.list_pubs()
+                for pubID in pubs:
+                    pub = pubs[pubID]
+                    if pattern in pubID or pattern in pub['host']:
+                        host, port = pub['host'], pub['port']
+                        break
+                else:
+                    raise Exception(f"no such pub '{pattern}'")
+            else:
+                port = 8008 if len(host) < 2 else int(host[1])
+                pubID = secr.id if len(host) < 3 else host[2]
+                host = host[0]
+
             send_queue = asyncio.Queue(loop=asyncio.get_event_loop())
             net.init(secr.id, send_queue)
             try:
@@ -227,6 +238,8 @@ async def main(secr, args):
                 # urwid.ExitMainLoop()
                 logger.exception("exc while connecting")
                 return # raise e
+
+            app.the_db.add_pub(pubID, host, port)
             output_log("connected, scanning will start soon ...")
             ensure_future(api)
 
@@ -909,7 +922,7 @@ class PrivateMessageBox(urwid.ListBox):
                            is_private=True)
             c = ConfirmTextDialog(True)
             recpts = util.lookup_recpts(self.secr, app, self.recpts)[0]
-            recpts = util.expand_recpts(self.secr, app, recpts)
+            recpts = util.expand_recpts(app, recpts)
             logger.info(f"recpts: {recpts}")
             e.open(draft_private_text,
                    lambda txt: c.open(txt, recpts,
@@ -1428,7 +1441,7 @@ class RecptsDialog(urwid.Overlay):
     def _callback(self):
         recpts = self.edit.get_edit_text().replace(',', '\n').split('\n')
         good, bad = util.lookup_recpts(self.secr, app, recpts)
-        good = util.expand_recpts(self.secr, app, good)
+        good = util.expand_recpts(app, good)
         if len(bad) > 0:
             for r in good:
                 if r[0] == '':

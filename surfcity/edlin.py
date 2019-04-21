@@ -75,12 +75,11 @@ def editor(lines):
                 continue
 
         if cmd == 'd':
-            if rng:
-                if rng[0] >= len(lines) or rng[1] >= len(lines):
-                    print("invalid range")
-                    continue
-            else:
+            if rng == None:
                 rng = (curr, curr)
+            if rng[0] >= len(lines) or rng[1] >= len(lines):
+                print("invalid range")
+                continue
             del lines[rng[0]:rng[1]+1]
             curr = rng[0]
             if curr == len(lines) and curr > 0: curr -= 1

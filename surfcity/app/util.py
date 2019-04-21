@@ -38,17 +38,15 @@ def lookup_recpts(secr, app, recpts):
         bad = ['max 8 recipients'] + bad
     return (good, bad)
 
-def expand_recpts(secr, app, recpts):
+def expand_recpts(app, recpts):
     lst = []
     for r in recpts:
         nm = app.feed2name(r)
-        logger.info(f"{nm} / {r} / {secr.id}")
-        # if not nm and secr.id in r:
-        #     nm = 'me'
+        logger.info(f"{nm} / {r}")
         if nm != None:
             nm = f"@{nm if nm[0] != '@' else nm[1:]}" # ]({r})"
         else:
-            nm = ''
+            nm = f"{r[:8]}.."
         lst.append( (nm,r) )
     return lst
 

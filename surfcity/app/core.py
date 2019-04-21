@@ -37,6 +37,8 @@ def text2synopsis(txt,ascii=False):
     txt = ' '.join(txt.split('\n'))
     txt = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', txt)
     txt = re.sub(r' +', ' ', txt)
+    for c in '\r\b\f\t':
+        txt = txt.replace(c, '')
     if ascii:
         txt = txt.encode('ascii',errors='replace').decode()
     return txt.strip()
@@ -220,9 +222,8 @@ def process_msg(msg, me, backwards=False):
             update_about_name(a, myalias=msg['content']['name'])
         else:
             update_about_name(a, named=msg['content']['name'])
-    elif t == 'contact' and type(msg['content']) == dict and \
-         not 'pub' in msg['content'] and 'contact' in msg['content'] and \
-         type(msg['content']['contact']) == str:
+    elif t == 'contact' and not 'pub' in msg['content'] and \
+         'contact' in msg['content'] and type(msg['content']['contact']) == str:
         c = msg['content']
         if 'blocking' in c and c['blocking']:
             the_db.update_follow(msg['author'], c['contact'], 2, backwards)
@@ -777,9 +778,10 @@ def submit_public_post(secr, txt, root=None, branch=None):
     '''
 
 def submit_private_post(secr, txt, recps, root=None, branch=None):
+    logger.info(f"private_post(recps={recps})")
     rlst = []
     for r in recps:
-        for s in re.findall(r'(@.{44}.ed25519)', r[1]):
+        for s in re.findall(r'(@.{44}.ed25519)', r):
             rlst.append(s)
     logger.info(f"private_post(rlst={rlst})")
     txt = {

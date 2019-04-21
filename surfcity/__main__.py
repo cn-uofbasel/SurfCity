@@ -68,14 +68,18 @@ def main(args=None):
         print()
         print(f"ID mismatch error:")
         print(f"- secret is for {secr.id}")
-        print(f"- but db created by {id_in_db} ({feed2name(id_in_db)})")
+        print(f"- but db was created by {id_in_db} '{app.feed2name(id_in_db)}'")
         sys.exit(0)
 
     if args.cmd:
+        print()
         if args.cmd == 'stats':
             print("database stats:")
             s = app.the_db.get_stats()
             print(json.dumps(s, indent=4))
+            print("known pubs:")
+            for pubID, pub in app.the_db.list_pubs().items():
+                print(f"  {pub['host']}:{pub['port']}:", "\n     ", pubID)
         sys.exit(0)
 
     if 'urwid' in args.ui:
