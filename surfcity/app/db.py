@@ -156,9 +156,10 @@ class SURFCITY_DB:
 
     def _get_feed_ndx(self, feedID):
         # returns the index i for the given feed, adds it if necessary
-        if feedID[0] != '@':
+        if not feedID or len(feedID) == 0 or feedID[0] != '@':
             s = traceback.format_exc()
-            raise Exception(f"should start with @: {feedID}\n{s}")
+            raise Exception(f"empty or should start with @: {feedID}" + \
+                            '\n' + f"{s}")
         try:
             sql = 'SELECT i FROM ssb_feed WHERE str = ? LIMIT 1;'
             res = self.conn.execute(sql, (feedID,)).fetchone()
@@ -358,9 +359,10 @@ class SURFCITY_DB:
         return lst[1:]
             
     def add_msg_link(self, key, msgName):
-        if key[0] != '%':
+        if not key or len(key) == 0 or key[0] != '%':
             s = traceback.format_exc()
-            raise Exception(f"should start with %: {key}\n{s}")
+            raise Exception(f"empty or should start with %: {key}" + \
+                            '\n' + "{s}")
         key = base64.b64decode(key.split('.')[0])
         i = self._get_feed_ndx(msgName[0])
         try:

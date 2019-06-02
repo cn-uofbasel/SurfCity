@@ -54,6 +54,8 @@ def main(args=None):
                         'tty', 'kivy'],
         nargs='?', metavar="USERINTERFACE", default='urwid',
         help='one of: urwid, tty, kivy, urwid_light, urwid_amber, urwid_green, urwid_mono (default: urwid)')
+    paa('-dbg', action='store_true',
+        help="write debug information to a file 'test-XXX.txt'")
 
     args = parser.parse_args()
 
@@ -95,7 +97,8 @@ def main(args=None):
         os.environ['KIVY_NO_ARGS'] = '1'
         import surfcity.ui.kivy as ui
 
-    logging.basicConfig(filename=f"test-{args.ui}.log",level=logging.INFO)
+    if args.dbg:
+        logging.basicConfig(filename=f"test-{args.ui}.log",level=logging.INFO)
     ui.launch(app, secr, args)
 
 # ---------------------------------------------------------------------------

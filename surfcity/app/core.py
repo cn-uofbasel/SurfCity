@@ -155,6 +155,15 @@ def msg2recps(msg, me):
         recps.sort()
     return recps
 
+def msg_ingested(msg, me, backwards=False):
+    try:
+        process_msg(msg, me, backwards)
+        return True
+    except Exception as e:
+        logger.info(f"** in process_msg: {str(e)}")
+        logger.info(traceback.format_exc())
+        return False
+
 def process_msg(msg, me, backwards=False):
     global new_friends_flag
 
@@ -283,7 +292,8 @@ async def scan_my_log(secr, args, out=None, ntfy=None):
         for msg in msgs:
             # if not ts:
             #     ts = msg['timestamp']
-            process_msg(msg, secr.id, backwards=True)
+            if not msg_ingested(msg, secr.id, backwards=True):
+                continue
             counter_add(1,0,ntfy)
             cnt += 1
             out and out('\r' + f"scanned {cnt} entries of own log", end='', flush=True)
@@ -327,7 +337,8 @@ async def scan_wavefront(me, secr, args, out=None, ntfy=None):
                 for m in msgs:
                     # if not ts:
                     #     ts = m['timestamp']/1000
-                    process_msg(m, me, backwards=True)
+                    if not msg_ingested(m, me, backwards=True):
+                        continue
                     counter_add(1,0,ntfy)
                 if len(msgs) > 0:
                     the_db.update_id_low(f, start)
@@ -396,7 +407,8 @@ async def scan_wavefront(me, secr, args, out=None, ntfy=None):
                 for m in msgs:
                     # if not ts:
                     #     ts = m['timestamp']/1000
-                    process_msg(m, me, backwards=True)
+                    if not msg_ingested(m, me, backwards=True):
+                        continue
                     counter_add(1,0,ntfy)
                 if len(msgs) > 0:
                     the_db.update_id_low(f, start)
@@ -407,7 +419,8 @@ async def scan_wavefront(me, secr, args, out=None, ntfy=None):
         msgs = await the_soliton.fetch_by_name([f,front+1], 5)
         if len(msgs) > 0:
             for m in msgs:
-                process_msg(m, me, backwards=False)
+                if not msg_ingested(m, me, backwards=False):
+                    continue
                 counter_add(0,1,ntfy)
             the_db.update_id_front(f, m['sequence'], m['key'])
         i += 1
@@ -564,11 +577,16 @@ async def expand_convo(secr, convo, args, cache_only, ascii=False):
     txt = []
     nms = []
     lst = convo['recps']
-    # logger.info(f"expand_convo(): recps={lst}")
+    logger.info(f"expand_convo(): recps={lst}")
     if len(lst) == 0: # only me
         lst = [secr.id]
     for r in lst:
-        n = feed2name(r)
+        try:
+            n = feed2name(r)
+        except Exception as e:
+            logger.info(f"*** {str(e)}")
+            logger.info(traceback.format_exc())
+            n = None
         if not n:
             n = r
         elif ascii:
@@ -697,8 +715,8 @@ async def expand_thread(secr, t, args, cache_only,
 
 
 def incoming_cb(msg ,me, ntfy):
-    process_msg(msg, me)
-    counter_add(0, 1, ntfy)
+    if msg_ingested(msg, me):
+        counter_add(0, 1, ntfy)
     
 async def process_new_friends(secr, out=None, ntfy=None):
     # logger.info("process_new_friends() starting")
@@ -711,7 +729,7 @@ async def process_new_friends(secr, out=None, ntfy=None):
                 out and out(f"Probe frontier for {feed}")
                 front, key = await id_get_frontier(secr, feed, out)
                 msgs = await the_soliton.fetch_by_name((feed,front))
-                process_msg(msgs[0], secr.id)
+                msg_ingested(msgs[0], secr.id)
                 the_db.update_id_front(feed, front, key)
             the_soliton.rd_start((feed,front+1),
                                  lambda msg: incoming_cb(msg, secr.id, ntfy))

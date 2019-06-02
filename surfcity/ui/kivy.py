@@ -32,6 +32,8 @@ import surfcity.app.net  as net
 
 the_public = None
 
+logger = logging.getLogger('surfcity_ui_urwid')
+
 # ----------------------------------------------------------------------
 
 # Create both screens. Please note the root.manager.current: this is how

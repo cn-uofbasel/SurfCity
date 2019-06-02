@@ -21,7 +21,7 @@ import surfcity.app.db   as db
 import surfcity.app.util as util
 
 logger = logging.getLogger('surfcity_ui_urwid')
-ui_descr = " (urwid ui, v2019-04-21)"
+ui_descr = " (urwid ui, v2019-06-02)"
 
 the_loop = None # urwid loop
 
@@ -40,6 +40,8 @@ screen_size = None
 
 widgets4convoList = []
 widgets4threadList = []
+
+connect_status = "Offline"
 
 # refresh_requested = False
 refresh_focus = None
@@ -161,9 +163,92 @@ async def construct_convoList(secr, args, cache_only=False):
         odd = not odd
     return widgets
 
+async def connectivity_manager(secr, args):
+    global connect_status
+
+    if False:
+        pass
+        '''
+        async def watchdog(host, port, pubID, keypair):
+            await asyncio.sleep(20)
+            output_log("disconnect")
+            logger.info("disconnect")
+            try:
+                net.disconnect()
+                cor = await net.connect(host, port, pubID, keypair)
+                output_log("connected 2 ...")
+                ensure_future(cor)
+            except Exception as e:
+                s = traceback.format_exc()
+                output_log(s)
+                logger.info("watchdog %s", s)
+
+        ensure_future(watchdog(host, port, pubID, secr.keypair))
+        '''
+
+    host = args.pub.split(':')
+    if len(host) == 1:
+        pattern = host[0]
+        pubs = app.the_db.list_pubs()
+        for pubID in pubs:
+            pub = pubs[pubID]
+            if pattern in pubID or pattern in pub['host']:
+                host, port = pub['host'], pub['port']
+                break
+        else:
+            raise Exception(f"no such pub '{pattern}'")
+    else:
+        port = 8008 if len(host) < 2 else int(host[1])
+        pubID = secr.id if len(host) < 3 else host[2]
+        host = host[0]
+
+    send_queue = asyncio.Queue(loop=asyncio.get_event_loop())
+    net.init(secr.id, send_queue)
+    api = None
+    try:
+        # print("connecting ...")
+        urwid_footer = urwid.Text('Connecting ...') # , wrap='clip')
+        api = await net.connect(host, port, pubID, secr.keypair)
+    except Exception as e:
+        ## except TimeoutError as e:
+        # logger.exception("timeout " + str(e))
+        # args.offline = True
+        # urwid_footer = urwid.Text('Offline') # , wrap='clip')
+        # # can we restart, just offline?
+        # error_message = str(e) # traceback.format_exc()
+        # return
+        ## except OSError as e:
+        # error_message = str(e) # traceback.format_exc()
+        # logger.exception("exc while connecting")
+        # # print(e)
+        # raise urwid.ExitMainLoop()
+        # return
+        # error_message = str(e) # traceback.format_exc()
+        # # urwid.ExitMainLoop()
+        logger.info("exc while connecting: " + str(e))
+        connect_status = "Offline"
+        args.offline = True
+        urwid_footer = urwid.Text('Offline') # , wrap='clip')
+        # return # raise e
+
+    if api:
+        app.the_db.add_pub(pubID, host, port)
+        connect_status = "Online"
+        output_log("Connected, scanning will start soon ...")
+        ensure_future(api)
+
+        try:
+            await app.scan_my_log(secr, args, output_log, output_counter)
+            if not args.noextend:
+                await app.process_new_friends(secr, output_log, output_counter)
+        except Exception as e:
+            logger.info("exc while connecting: " + str(e))
+            logger.info(traceback.format_exc())
+
 async def main(secr, args):
     global widgets4threadList, widgets4convoList, error_message
     global draft_text, draft_private_text, draft_private_recpts
+    global connect_status
     # global refresh_requested #, new_friends_flag
 
     draft_text = app.the_db.get_config('draft_post')
@@ -186,74 +271,17 @@ async def main(secr, args):
         logger.info(f"*** {str(e)}")
         logger.info(traceback.format_exc())
 
+    if not args.offline:
+        ensure_future(connectivity_manager(secr, args))
+
     try:
-        '''
-        async def watchdog(host, port, pubID, keypair):
-            await asyncio.sleep(20)
-            output_log("disconnect")
-            logger.info("disconnect")
-            try:
-                net.disconnect()
-                cor = await net.connect(host, port, pubID, keypair)
-                output_log("connected 2 ...")
-                ensure_future(cor)
-            except Exception as e:
-                s = traceback.format_exc()
-                output_log(s)
-                logger.info("watchdog %s", s)
-
-        ensure_future(watchdog(host, port, pubID, secr.keypair))
-        '''
-
-        if not args.offline:
-            host = args.pub.split(':')
-            if len(host) == 1:
-                pattern = host[0]
-                pubs = app.the_db.list_pubs()
-                for pubID in pubs:
-                    pub = pubs[pubID]
-                    if pattern in pubID or pattern in pub['host']:
-                        host, port = pub['host'], pub['port']
-                        break
-                else:
-                    raise Exception(f"no such pub '{pattern}'")
-            else:
-                port = 8008 if len(host) < 2 else int(host[1])
-                pubID = secr.id if len(host) < 3 else host[2]
-                host = host[0]
-
-            send_queue = asyncio.Queue(loop=asyncio.get_event_loop())
-            net.init(secr.id, send_queue)
-            try:
-                api = await net.connect(host, port, pubID, secr.keypair)
-                output_log("connected, scanning will start soon ...")
-            except OSError as e:
-                error_message = str(e) # traceback.format_exc()
-                logger.exception("exc while connecting")
-                # print(e)
-                raise urwid.ExitMainLoop()
-                return
-            except Exception as e:
-                error_message = str(e) # traceback.format_exc()
-                # urwid.ExitMainLoop()
-                logger.exception("exc while connecting")
-                return # raise e
-
-            app.the_db.add_pub(pubID, host, port)
-            output_log("connected, scanning will start soon ...")
-            ensure_future(api)
-
-            await app.scan_my_log(secr, args, output_log, output_counter)
-            if not args.noextend:
-                await app.process_new_friends(secr, output_log, output_counter)
-
         widgets4threadList = await construct_threadList(secr, args,
                                                         cache_only=True)
         activate_threadList(secr)
         widgets4convoList  = await construct_convoList(secr, args)
 
         while True:
-            if not args.offline:
+            if connect_status == "Online":
                 logger.info(f"surfcity {str(time.ctime())} before wavefront")
                 await app.scan_wavefront(secr.id, secr, args,
                                          output_log, output_counter)
@@ -289,7 +317,7 @@ async def main(secr, args):
                     app.new_back+app.new_forw > 0:
                     output_log("Type '!' to refresh screen")
                 else:
-                    output_log("")
+                    output_log(connect_status)
 
             logger.info("%s", f"surfcity {str(time.ctime())} before sleeping")
             for i in range(50):
@@ -1534,6 +1562,23 @@ class Menu(urwid.Overlay):
         return super().keypress(size, key)
 
 # ---------------------------------------------------------------------------
+# https://github.com/urwid/urwid/issues/235
+
+class CustomEventLoop(urwid.AsyncioEventLoop):
+    def _exception_handler(self, loop, context):
+        exc = context.get('exception')
+        if exc:
+            loop.stop()
+            if not isinstance(exc, urwid.ExitMainLoop):
+                # Store the exc_info so we can re-raise after the loop stops
+                import sys
+                self._exc_info = sys.exc_info()
+                if self._exc_info == (None, None, None):
+                    self._exc_info = (type(exc), exc, exc.__traceback__)
+        else:
+            loop.default_exception_handler(context)
+
+# ---------------------------------------------------------------------------
 
 def launch(app_core, secr, args):
     global app, the_loop
@@ -1633,13 +1678,17 @@ def launch(app_core, secr, args):
 
     logger.info("%s", f"surfcity {str(time.ctime())} starting")
 
-    evl = urwid.AsyncioEventLoop(loop=asyncio.get_event_loop())
-    ensure_future(main(secr, args))
-    the_loop = urwid.MainLoop(urwid.AttrMap(urwid_frame, 'fill'),
+    try:
+        evl = CustomEventLoop(loop=asyncio.get_event_loop())
+        ensure_future(main(secr, args))
+        the_loop = urwid.MainLoop(urwid.AttrMap(urwid_frame, 'fill'),
                               screen=screen, event_loop=evl,
                               unhandled_input=on_unhandled_input)
-    try:
         the_loop.run()
+    except TimeoutError:
+        s = traceback.format_exc()
+        logger.info("timeout error %s", s)
+        print(s)
     except Exception as e:
         s = traceback.format_exc()
         logger.info("main exc %s", s)
