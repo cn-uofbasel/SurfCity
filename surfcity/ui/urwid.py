@@ -15,9 +15,8 @@ import time
 import traceback
 import urwid
 
-app = None
+surf_core = None
 import surfcity.app.net  as net
-import surfcity.app.db   as db
 import surfcity.app.util as util
 
 logger = logging.getLogger('surfcity_ui_urwid')
@@ -132,14 +131,14 @@ async def construct_threadList(secr, args,
                                cache_only=False, extended_network=False):
     # public threads
     widgets = []
-    lst = app.mk_thread_list(secr, args, cache_only = cache_only,
+    lst = surf_core.mk_thread_list(secr, args, cache_only = cache_only,
                              extended_network = extended_network)
-    blocked = app.the_db.get_following(secr.id, 2)
+    blocked = surf_core.the_db.get_following(secr.id, 2)
     odd = True
     # logger.info(str(lst))
     for t in lst:
         logger.info(f"thread {t}")
-        msgs, txt, _ = await app.expand_thread(secr, t, args, cache_only, blocked)
+        msgs, txt, _ = await surf_core.expand_thread(secr, t, args, cache_only, blocked)
         # logger.info(str(msgs))
         # logger.info(str(txt))
         widgets.append(ThreadEntry(t, msgs, txt, 'odd' if odd else 'even'))
@@ -149,10 +148,10 @@ async def construct_threadList(secr, args,
 async def construct_convoList(secr, args, cache_only=False):
     # private conversations
     widgets = []
-    convos = await app.mk_convo_list(secr, args, cache_only)
+    convos = await surf_core.mk_convo_list(secr, args, cache_only)
     odd = True
     for c in convos:
-        msgs, txt, new_count = await app.expand_convo(secr, c, args, cache_only)
+        msgs, txt, new_count = await surf_core.expand_convo(secr, c, args, cache_only)
         #                               'oddBold' if odd else 'evenBold')
         #logger.info('convolist')
         #for m in msgs:
@@ -189,7 +188,7 @@ async def connectivity_manager(secr, args):
     host = args.pub.split(':')
     if len(host) == 1:
         pattern = host[0]
-        pubs = app.the_db.list_pubs()
+        pubs = surf_core.the_db.list_pubs()
         for pubID in pubs:
             pub = pubs[pubID]
             if pattern in pubID or pattern in pub['host']:
@@ -232,15 +231,15 @@ async def connectivity_manager(secr, args):
         # return # raise e
 
     if api:
-        app.the_db.add_pub(pubID, host, port)
+        surf_core.the_db.add_pub(pubID, host, port)
         connect_status = "Online"
         output_log("Connected, scanning will start soon ...")
         ensure_future(api)
 
         try:
-            await app.scan_my_log(secr, args, output_log, output_counter)
+            await surf_core.scan_my_log(secr, args, output_log, output_counter)
             if not args.noextend:
-                await app.process_new_friends(secr, output_log, output_counter)
+                await surf_core.process_new_friends(secr, output_log, output_counter)
         except Exception as e:
             logger.info("exc while connecting: " + str(e))
             logger.info(traceback.format_exc())
@@ -251,8 +250,8 @@ async def main(secr, args):
     global connect_status
     # global refresh_requested #, new_friends_flag
 
-    draft_text = app.the_db.get_config('draft_post')
-    priv = app.the_db.get_config('draft_private_post')
+    draft_text = surf_core.the_db.get_config('draft_post')
+    priv = surf_core.the_db.get_config('draft_private_post')
     if priv != None:
         try:
             priv = json.loads(priv)
@@ -260,12 +259,12 @@ async def main(secr, args):
         except:
             pass
     try:
-        last_vacuum = app.the_db.get_config('last_vacuum')
+        last_vacuum = surf_core.the_db.get_config('last_vacuum')
         now = int(time.time())
         if not last_vacuum or int(last_vacuum) + vacuum_intervall < now:
             logger.info("removing old posts and compacting database")
-            app.the_db.forget_posts(app.frontier_window);
-            app.the_db.set_config('last_vacuum', now)
+            surf_core.the_db.forget_posts(surf_core.frontier_window);
+            surf_core.the_db.set_config('last_vacuum', now)
             logger.info("database vacuumed")
     except Exception as e:
         logger.info(f"*** {str(e)}")
@@ -283,10 +282,10 @@ async def main(secr, args):
         while True:
             if connect_status == "Online":
                 logger.info(f"surfcity {str(time.ctime())} before wavefront")
-                await app.scan_wavefront(secr.id, secr, args,
+                await surf_core.scan_wavefront(secr.id, secr, args,
                                          output_log, output_counter)
                 logger.info(f"surfcity {str(time.ctime())} after wavefront")
-            if app.refresh_requested:
+            if surf_core.refresh_requested:
                 if urwid_frame.contents['body'][0] == urwid_threadList:
                     output_log("Preparing public content list...")
                     widgets4threadList = await construct_threadList(secr, args,
@@ -299,22 +298,22 @@ async def main(secr, args):
                     activate_convoList(secr)
                     widgets4threadList = await construct_threadList(secr, args,
                                         extended_network = show_extended_network)
-                app.refresh_requested = False
-                app.counter_reset(output_counter)
+                surf_core.refresh_requested = False
+                surf_core.counter_reset(output_counter)
             else:
                 # construct the *other* list (that is not being displayed)
                 if urwid_frame.contents['body'][0] == urwid_threadList:
                     widgets4convoList  = await construct_convoList(secr, args)
                 elif urwid_frame.contents['body'][0] == urwid_convoList:
                     widgets4threadList = await construct_threadList(secr, args)
-            if app.new_friends_flag:
-                await app.process_new_friends(secr, output_log, output_counter)
-                app.new_friends_flag = False
+            if surf_core.new_friends_flag:
+                await surf_core.process_new_friends(secr, output_log, output_counter)
+                surf_core.new_friends_flag = False
 
             if not args.offline:
                 if (urwid_frame.contents['body'][0] == urwid_threadList or \
                     urwid_frame.contents['body'][0] == urwid_convoList) and \
-                    app.new_back+app.new_forw > 0:
+                    surf_core.new_back+surf_core.new_forw > 0:
                     output_log("Type '!' to refresh screen")
                 else:
                     output_log(connect_status)
@@ -322,7 +321,7 @@ async def main(secr, args):
             logger.info("%s", f"surfcity {str(time.ctime())} before sleeping")
             for i in range(50):
                 await asyncio.sleep(0.1)
-                if app.refresh_requested:
+                if surf_core.refresh_requested:
                     break
 
 #        if not args.offline:
@@ -392,7 +391,7 @@ def on_unhandled_input(ev):
     output_log(f"unhandled event: {str(ev)}")
 
 def output_counter():
-    urwid_counter.set_text(f"  FWD={app.new_forw} BWD={app.new_back} ")
+    urwid_counter.set_text(f"  FWD={surf_core.new_forw} BWD={surf_core.new_back} ")
 
 
 # ----------------------------------------------------------------------
@@ -647,13 +646,13 @@ class UserListBox(urwid.ListBox):
 
     def _user2line(self, feedID, isFriend = False):
         prog = '0'
-        front,_ = app.the_db.get_id_front(feedID)
+        front,_ = surf_core.the_db.get_id_front(feedID)
         if front > 0:
-            low = app.the_db.get_id_low(feedID)
+            low = surf_core.the_db.get_id_low(feedID)
             if low > 0:
                 prog = str((front - low + 1)*100 // front)
         prog = f"  {prog}%"[-4:]
-        n = app.feed2name(feedID)
+        n = surf_core.feed2name(feedID)
         if not n:
             n = '?'
         fr = '* ' if isFriend else '  '
@@ -670,14 +669,14 @@ class UserListBox(urwid.ListBox):
 
         urwid_title.set_text(self.title)
         lst = [urwid.Text('v--- U S E R S ---v', 'center')]
-        me = app.the_db.get_config('id')
+        me = surf_core.the_db.get_config('id')
 
         lst.append(self._lines2widget([f"My feedID:\n\n{self._user2line(me)}\n"]))
 
-        pubs = app.the_db.list_pubs()
-        frnd = app.the_db.get_friends(me)
+        pubs = surf_core.the_db.list_pubs()
+        frnd = surf_core.the_db.get_friends(me)
 
-        fol = app.the_db.get_following(me)
+        fol = surf_core.the_db.get_following(me)
         t = []
         for f in fol:
             if f in pubs:
@@ -688,7 +687,7 @@ class UserListBox(urwid.ListBox):
             t.append('')
         lst.append(self._lines2widget(t))
 
-        fol = app.the_db.get_following(me)
+        fol = surf_core.the_db.get_following(me)
         t1, t2 = [], []
         for f in fol:
             if f in pubs:
@@ -705,7 +704,7 @@ class UserListBox(urwid.ListBox):
             t.append('')
         lst.append(self._lines2widget(t))
 
-        folr = app.the_db.get_followers(me)
+        folr = surf_core.the_db.get_followers(me)
         t = []
         for f in folr:
             if f in frnd:
@@ -717,7 +716,7 @@ class UserListBox(urwid.ListBox):
             t.append('')
         lst.append(self._lines2widget(t))
 
-        blk = app.the_db.get_following(me, 2)
+        blk = surf_core.the_db.get_following(me, 2)
         t = []
         for f in blk:
             t.append(self._user2line(f))
@@ -727,7 +726,7 @@ class UserListBox(urwid.ListBox):
         t = [f"Blocked feeds: {len(blk)}\n"] + t
         lst.append(self._lines2widget(t))
 
-        ffol = app.the_db.get_follofollowing(me)
+        ffol = surf_core.the_db.get_follofollowing(me)
         t = []
         for f in ffol:
             if f in fol:
@@ -819,7 +818,7 @@ class PrivateConvoListBox(urwid.ListBox):
         if key in arrow_pg_up:
             return self.keypress(size, 'page up')
         if key in ['!']:
-            app.refresh_requested = True
+            surf_core.refresh_requested = True
             if self.focus:
                 refresh_focus = self.focus.key
                 refresh_focus_pos = self.get_focus()[1]
@@ -842,8 +841,7 @@ class PrivateConvoListBox(urwid.ListBox):
                    e.open(draft_private_text,
                           lambda x: c.open(x, recpts,
                               lambda : e.reopen(),
-                              lambda y: app.submit_private_post(self.secr,
-                                                                y, recpts))
+                              lambda y: surf_core.post(self.secr, y, recps=recpts))
                    )
             )
             return
@@ -854,18 +852,18 @@ class PrivateConvoListBox(urwid.ListBox):
         self.focus.count.set_text('')
         back_stack.append(urwid_convoList)
         for t in self.focus.convo['threads']:
-            app.the_db.update_thread_lastread(t)
+            surf_core.the_db.update_thread_lastread(t)
         lst = [urwid.Text('---oldest---', 'center')]
         root, branch = (None, None) # we only want the last one
         for m in self.focus.msgs:
             branch = m['key']
             root = m['content']['root'] if 'root' in m['content'] else branch
             a = m['author']
-            n = app.feed2name(m['author'])
+            n = surf_core.feed2name(m['author'])
             if not n:
                 n = m['author']
             n = urwid.Columns([urwid.Text(n),
-                                 (13, urwid.Text(app.utc2txt(m['timestamp'])))])
+                                 (13, urwid.Text(util.utc2txt(m['timestamp'])))])
             t = m['content']['text']
             t = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', t)
             t = urwid.AttrMap(urwid.Text(t), 'even')
@@ -876,12 +874,12 @@ class PrivateConvoListBox(urwid.ListBox):
         
         # nms = []
         # for r in self.focus.convo['recps']:
-        #     n = app.feed2name(r)
+        #     n = surf_core.feed2name(r)
         #     if not n:
         #          n = r[:10]
         #     nms.append(n)
         ## if len(nms) == 0:
-        ##     nms = [app.feed2name(secr.id)]
+        ##     nms = [surf_core.feed2name(secr.id)]
         # title = f"Private conversation with <{', '.join(nms)[:50]}>:"
         title = "Private conversation\n" + f"with {self.focus.title[:50]}"
 
@@ -938,8 +936,7 @@ class PrivateMessageBox(urwid.ListBox):
                    e.open(draft_private_text,
                           lambda txt: c.open(txt, recpts,
                              lambda : e.reopen(),
-                             lambda y: app.submit_private_post(self.secr,
-                                                               y,recpts))
+                             lambda y: surf_core.post(self.secr, y, recps=recpts))
                    )
             )
             return
@@ -949,16 +946,16 @@ class PrivateMessageBox(urwid.ListBox):
                            f"Compose PRIVATE reply to {dest[dest.index('<'):]}",
                            is_private=True)
             c = ConfirmTextDialog(True)
-            recpts = util.lookup_recpts(self.secr, app, self.recpts)[0]
-            recpts = util.expand_recpts(app, recpts)
+            recpts = util.lookup_recpts(self.secr, surf_core, self.recpts)[0]
+            recpts = util.expand_recpts(surf_core, recpts)
             logger.info(f"recpts: {recpts}")
             e.open(draft_private_text,
                    lambda txt: c.open(txt, recpts,
                            lambda : e.reopen(),
-                           lambda y: app.submit_private_post(self.secr, y,
-                                                             recpts,
-                                                             self.root,
-                                                             self.branch))
+                           lambda y: surf_core.post(self.secr, y,
+                                                    root=self.root,
+                                                    branch=self.branch,
+                                                    recps=recpts))
             )
             return
         
@@ -1039,8 +1036,8 @@ class MessageBox(urwid.ListBox):
             c = ConfirmTextDialog(False)
             e.open(draft_text, lambda txt: c.open(txt, None,
                            lambda : e.reopen(),
-                           lambda y: app.submit_public_post(self.secr, y,
-                                                            root, branch))
+                           lambda y: surf_core.post(self.secr, y,
+                                                    root=root, branch=branch))
             )
             return
         if not key in arrow_left:
@@ -1096,7 +1093,7 @@ class ThreadListBox(urwid.ListBox):
             # output_log(f"show_extended_network now= {show_extended_network}")
             key = '!'
         if key in ['!']:
-            app.refresh_requested = True
+            surf_core.refresh_requested = True
             if self.focus:
                 refresh_focus = self.focus.key
                 refresh_focus_pos = self.get_focus()[1]
@@ -1115,7 +1112,7 @@ class ThreadListBox(urwid.ListBox):
             c = ConfirmTextDialog(False)
             e.open(draft_text, lambda txt: c.open(txt, None,
                            lambda : e.reopen(),
-                           lambda y: app.submit_public_post(self.secr, y))
+                           lambda y: surf_core.post(self.secr, y))
             )
             return
         if not key in arrow_right:
@@ -1124,7 +1121,7 @@ class ThreadListBox(urwid.ListBox):
         self.focus.star.set_text('')
         self.focus.count.set_text('')
         back_stack.append(urwid_threadList)
-        app.the_db.update_thread_lastread(self.focus.key)
+        surf_core.the_db.update_thread_lastread(self.focus.key)
         lst = [urwid.Text('---oldest---', 'center')]
         if len(self.focus.msgs) > 0 and 'root' in self.focus.msgs[0]['content']:
             lst.append(urwid.Text('[some older messages out of reach]', 'center'))
@@ -1133,11 +1130,11 @@ class ThreadListBox(urwid.ListBox):
             branch = m['key']
             root = m['content']['root'] if 'root' in m['content'] else branch
             a = m['author']
-            n = app.feed2name(m['author'])
+            n = surf_core.feed2name(m['author'])
             if not n:
                 n = m['author']
             n = urwid.Columns([urwid.Text(n),
-                               (13, urwid.Text(app.utc2txt(m['timestamp'])))])
+                               (13, urwid.Text(util.utc2txt(m['timestamp'])))])
             t = m['content']['text']
             t = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', t)
             t = urwid.AttrMap(urwid.Text(t), 'even')
@@ -1146,9 +1143,9 @@ class ThreadListBox(urwid.ListBox):
             lst.append(urwid.Padding(p, left=2, right=2))
         lst.append(urwid.Text('---newest---', 'center'))
 
-        title = app.the_db.get_thread_title(self.focus.key)
+        title = surf_core.the_db.get_thread_title(self.focus.key)
         if title:
-            title = "Public:\n" + f"'{app.text2synopsis(title)}'"
+            title = "Public:\n" + f"'{util.text2synopsis(title)}'"
         else:
             title = "Public:\n<unknown first post>"
 
@@ -1205,10 +1202,10 @@ def save_draft(txt, recpts):
     if recpts != None:
         draft_private_text = txt
         draft_private_recpts = recpts
-        app.the_db.set_config('draft_private_post', json.dumps((txt, recpts)))
+        surf_core.the_db.set_config('draft_private_post', json.dumps((txt, recpts)))
     else:
         draft_text = txt
-        app.the_db.set_config('draft_post', txt)
+        surf_core.the_db.set_config('draft_post', txt)
 
 # ----------------------------------------------------------------------
 
@@ -1384,7 +1381,7 @@ class ConfirmTextDialog(urwid.Overlay):
             logger.info(f"recipients: {recpts}")
             lst = ['Recipients:']
             for r in recpts:
-                #nm = app.feed2name(re.findall(r'(@.{44}.ed25519)', r)[0])
+                #nm = surf_core.feed2name(re.findall(r'(@.{44}.ed25519)', r)[0])
                 #if nm:
                 #    r = f"[@{nm if nm[0] != '@' else nm[1:]}]({r})"
                 lst.append("  %-10s  %s" % (r[0][:10], r[1]))
@@ -1468,8 +1465,8 @@ class RecptsDialog(urwid.Overlay):
 
     def _callback(self):
         recpts = self.edit.get_edit_text().replace(',', '\n').split('\n')
-        good, bad = util.lookup_recpts(self.secr, app, recpts)
-        good = util.expand_recpts(app, good)
+        good, bad = util.lookup_recpts(self.secr, surf_core, recpts)
+        good = util.expand_recpts(surf_core, good)
         if len(bad) > 0:
             for r in good:
                 if r[0] == '':
@@ -1581,11 +1578,12 @@ class CustomEventLoop(urwid.AsyncioEventLoop):
 # ---------------------------------------------------------------------------
 
 def launch(app_core, secr, args):
-    global app, the_loop
+    global surf_core, the_loop
     global urwid_counter, urwid_back, urwid_title, urwid_header
     global urwid_footer, urwid_threadList, urwid_convoList, urwid_frame
+    global connect_status
 
-    app = app_core
+    surf_core = app_core
     print(ui_descr)
 
     amber_palette = [
@@ -1685,7 +1683,13 @@ def launch(app_core, secr, args):
                               screen=screen, event_loop=evl,
                               unhandled_input=on_unhandled_input)
         the_loop.run()
-    except TimeoutError:
+        # except TimeoutError:
+        #         s = traceback.format_exc()
+        #         logger.info("timeout error %s", s)
+        #         connect_status = "Offline"
+        #         urwid_footer = urwid.Text('Offline')
+        #        continue
+    except (TimeoutError, ConnectionResetError):
         s = traceback.format_exc()
         logger.info("timeout error %s", s)
         print(s)

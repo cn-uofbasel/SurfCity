@@ -19,6 +19,7 @@ import traceback
 import surfcity.app.db
 import surfcity.app.net     as net
 import surfcity.app.soliton
+import surfcity.app.util    as util
 import ssb.local.config     as config
 
 logger = logging.getLogger('ssb_app_core')
@@ -30,27 +31,6 @@ the_soliton = None
 frontier_window = 60*60*24*7 * 4 # 4 weeks
 refresh_requested = False
 new_friends_flag = False
-
-# ----------------------------------------------------------------------
-
-def text2synopsis(txt,ascii=False):
-    txt = ' '.join(txt.split('\n'))
-    txt = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', txt)
-    txt = re.sub(r' +', ' ', txt)
-    for c in '\r\b\f\t':
-        txt = txt.replace(c, '')
-    if ascii:
-        txt = txt.encode('ascii',errors='replace').decode()
-    return txt.strip()
-
-def utc2txt(ts, fixed_width=True):
-    now = time.time()
-    t = time.localtime(ts)
-    if now - ts < 60*60*24*180: # half a year
-        t = time.strftime("%b %e/%H:%M", t)
-    else:
-        t = time.strftime("%b %e, %Y", t)
-    return t if fixed_width else t.replace('  ', ' ')
 
 def feed2name(feedID):
     n = the_db.get_about(feedID, 'myname')
@@ -137,24 +117,6 @@ async def id_get_frontier(secr, author, out=None):
     # logger.info(f" frontier: got {author} {seqno - high + low}")
     return (low, key) # seqno - high + low
 
-def msg2recps(msg, me):
-    # extract recps if msg was encrypted, return [] otherwise
-    recps = []
-    if 'private' in msg and msg['private']:
-        c = msg['content']
-        if 'recps' in c and type(c['recps']) == list:
-            for r in c['recps']:
-                if type(r) == str:
-                    recps.append(r)
-                else:
-                    recps.append('?')
-        if not msg['author'] in recps:
-            recps.append(msg['author'])
-        # if me in recps:
-        #     recps.remove(me)
-        recps.sort()
-    return recps
-
 def msg_ingested(msg, me, backwards=False):
     try:
         process_msg(msg, me, backwards)
@@ -204,7 +166,7 @@ def process_msg(msg, me, backwards=False):
                     if the_db.get_thread_newest(rkey) < ts:
                         the_db.update_thread_newest(rkey, ts)
                 except:
-                    the_db.add_thread(msg2recps(msg, me), rkey, ts)
+                    the_db.add_thread(util.msg2recps(msg, me), rkey, ts)
                 the_db.add_tip_to_thread(rkey, msg['key'])
                 if 'branch' in msg['content']:
                     br = msg['content']['branch']
@@ -216,10 +178,10 @@ def process_msg(msg, me, backwards=False):
         elif 'text' in msg['content'] and type(msg['content']['text']) == str:
                                                # start of a new thread
             mkey = msg['key']
-            the_db.add_thread(msg2recps(msg, me), mkey, msg['timestamp'])
+            the_db.add_thread(util.msg2recps(msg, me), mkey, msg['timestamp'])
             the_db.add_author_to_thread(mkey, msg['author'])
             the_db.add_tip_to_thread(mkey, mkey)
-            txt = text2synopsis(msg['content']['text'])[:256]
+            txt = util.text2synopsis(msg['content']['text'])[:256]
             the_db.update_thread_title(mkey, txt)
     elif t == 'about' and 'about' in msg['content'] and \
          msg['content']['about'][:1] == '@' and 'name' in msg['content'] and \
@@ -606,8 +568,8 @@ async def expand_convo(secr, convo, args, cache_only, ascii=False):
         if ascii:
             n = n.encode('ascii', errors='replace').decode()
         # n = (n + ' '*10)[:10]
-        t = text2synopsis(m['content']['text'],ascii=ascii)
-        txt.append( (utc2txt(m['timestamp']), n, t) )
+        t = util.text2synopsis(m['content']['text'],ascii=ascii)
+        txt.append( (util.utc2txt(m['timestamp']), n, t) )
     if len(msgs2) > 0:
         pass
     else:
@@ -627,7 +589,7 @@ async def expand_thread(secr, t, args, cache_only,
     recps = the_db.get_thread_recps(t)
     title = the_db.get_thread_title(t)
 
-    title = text2synopsis(title,ascii) if title else ".."
+    title = util.text2synopsis(title,ascii) if title else ".."
     lastread = the_db.get_thread_lastread(t)
     msgs = []
 
@@ -706,8 +668,8 @@ async def expand_thread(secr, t, args, cache_only,
         if ascii:
             n = n.encode('ascii', errors='replace').decode()
         # n = (n + ' '*10)[:10]
-        t = text2synopsis(m['content']['text'], ascii=ascii)
-        txt.append( (utc2txt(m['timestamp']), n, t) )
+        t = util.text2synopsis(m['content']['text'], ascii=ascii)
+        txt.append( (util.utc2txt(m['timestamp']), n, t) )
     # if len(msgs2) == 0:
     #     nm = the_db.link_to_name(t)
     #     txt.append( ('?', '?', nm) ) # f"-- empty thread? {nm}")
@@ -740,116 +702,55 @@ async def process_new_friends(secr, out=None, ntfy=None):
 
 # ----------------------------------------------------------------------
 
-# async def push(content):
-#     try:
-#         the_soliton.wr(content) # net.my_feed_send_queue.put(content)
-#     except Exception as e:
-#         logger.info(" ** push %s", str(e))
-# <        logger.info(" ** %s", traceback.format_exc())
-    
-def submit_public_post(secr, txt, root=None, branch=None):
-    # logger.info('public_post()')
-    txt = {
+def post(secr, txt, root=None, branch=None, recps=None):
+    logger.info(f"post(recps={recps})")
+    rlst = [] # list of private recipient IDs
+
+    content = {
         "type": "post",
         "text": txt,
-        "recps": None
     }
-    if root:   txt['root'] = root
-    if branch: txt['branch'] = branch
-    the_soliton.wr(msg)
-    return
+    if root:    content['root'] = root
+    if branch:  content['branch'] = branch
 
-    '''
-    sig = base64.b64encode(secr.sign(msg.encode('utf8'))).decode('ascii') +\
-    seq, key = the_db.get_id_front(secr.id)
-    msg = config.formatMsg(key, seq+1, secr.id, int(time.time() * 1000),
-                          'sha256', txt, None)
-    # logger.info(msg)
-    sig = base64.b64encode(secr.sign(msg.encode('utf8'))).decode('ascii') +\
-          '.sig.ed25519'
-    msg = msg[:-2] + ',\n  "signature": "%s"\n}' % sig
-    # logger.info(msg)
+    if recps:
+        for r in recps:
+            if type(r) == tuple:
+                r = r[1] # get the ID (drop the display name)
+            for s in re.findall(r'(@.{44}.ed25519)', r):
+                rlst.append(s)
+        content['recps'] = rlst
 
-    jmsg = json.loads(msg)
-    if not 'author' in jmsg or not 'signature' in jmsg:
-            raise ValueError
-    s = base64.b64decode( jmsg['signature'] )
-    i = msg.find(',\n  "signature":')
-    m = (msg[:i] + '\n}').encode('utf8')
-    if not config.verify_signature(jmsg['author'], m, s):
-        logger.info("  invalid signature")
-    else:
-        logger.info("  valid signature")
+    the_soliton.wr(content, rlst)
 
-    withKeys = False
-    if withKeys:
-        h = hashlib.sha256(msg.encode('utf8')).digest()
-        msg = { 'key' : '%' + base64.b64encode(h).decode('ascii') + '.sha256',
-                'value': json.loads(msg),
-                'timestamp': int(time.time() * 1000) }
-        # logger.info(json.dumps(msg, indent=2))
-    else:
-        msg = json.loads(msg)
+#def submit_public_post(secr, txt, root=None, branch=None):
+#    # logger.info('public_post()')
+#    txt = {
+#        "type": "post",
+#        "text": txt,
+#        "recps": None
+#    }
+#    if root:   txt['root'] = root
+#    if branch: txt['branch'] = branch
+#
+#    the_soliton.wr(msg)
 
-    # logger.info("put public msg into queue")
-    asyncio.ensure_future(push(msg))
-    '''
-
-def submit_private_post(secr, txt, recps, root=None, branch=None):
-    logger.info(f"private_post(recps={recps})")
-    rlst = []
-    for r in recps:
-        for s in re.findall(r'(@.{44}.ed25519)', r):
-            rlst.append(s)
-    logger.info(f"private_post(rlst={rlst})")
-    txt = {
-        "type": "post",
-        "text": txt,
-        "recps": rlst
-    }
-    if root:    txt['root'] = root
-    if branch:  txt['branch'] = branch
-    box = secr.boxPrivateData(json.dumps(txt).encode('utf8'), rlst)
-    box = base64.b64encode(box).decode('ascii') + '.box'
-
-    the_soliton.wr(box)
-    return
-
-    '''
-    seq, key = the_db.get_id_front(secr.id)
-    msg = config.formatMsg(key, seq+1, secr.id,
-                          int(time.time() * 1000),
-                          'sha256', box, None)
-    # logger.info(msg)
-    sig = base64.b64encode(secr.sign(msg.encode('utf8'))).decode('ascii') +\
-          '.sig.ed25519'
-    msg = msg[:-2] + ',\n  "signature": "%s"\n}' % sig
-    logger.info(f"private_post: msg={msg}")
-
-    jmsg = json.loads(msg)
-    if not 'author' in jmsg or not 'signature' in jmsg:
-            raise ValueError
-    s = base64.b64decode( jmsg['signature'] )
-    i = msg.find(',\n  "signature":')
-    m = (msg[:i] + '\n}').encode('utf8')
-    if not config.verify_signature(jmsg['author'], m, s):
-        logger.info("  invalid signature")
-    else:
-        logger.info("  valid signature")
-
-    withKeys = False
-    if withKeys:
-        h = hashlib.sha256(msg.encode('utf8')).digest()
-        msg = { 'key' : '%' + base64.b64encode(h).decode('ascii') + '.sha256',
-                'value': json.loads(msg),
-                'timestamp': int(time.time() * 1000) }
-        # logger.info(json.dumps(msg, indent=2))
-    else:
-        msg = json.loads(msg)
-
-    # logger.info("put msg into queue")
-    asyncio.ensure_future(net.my_feed_send_queue.put(msg)) # 
-    '''
+#def submit_private_post(secr, txt, recps, root=None, branch=None):
+#    logger.info(f"private_post(recps={recps})")
+#    rlst = []
+#    for r in recps:
+#        for s in re.findall(r'(@.{44}.ed25519)', r):
+#            rlst.append(s)
+#    logger.info(f"private_post(rlst={rlst})")
+#    txt = {
+#        "type": "post",
+#        "text": txt,
+#        "recps": rlst
+#    }
+#    if root:    txt['root'] = root
+#    if branch:  txt['branch'] = branch
+#
+#    the_soliton.wr_private(txt, rlst)
 
 # ----------------------------------------------------------------------
 

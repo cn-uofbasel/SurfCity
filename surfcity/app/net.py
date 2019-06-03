@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# surfcity/surfcity_net.py - the SSB protocol
+# surfcity/app/net.py - the SSB protocol
 
 # 2018-08-31 (c) <christian.tschudin@unibas.ch>
 # June 2017  (c) Pedro Ferreira <pedro@dete.st>
@@ -22,7 +22,7 @@ from ssb.rpc.muxrpc import MuxRPCAPI, MuxRPCAPIException, MuxRPCRequest
 from ssb.rpc.packet_stream import PacketStream, PSMessage, PSMessageType
 from ssb.shs.network import SHSClient, SHSServer
 
-import ssb.local.config
+# import ssb.local.config
 
 import logging
 logger = logging.getLogger('ssb/app/net')

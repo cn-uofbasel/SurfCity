@@ -138,6 +138,9 @@ class MuxRPCAPI(object):
 
     def process(self, connection, req_message):
         # sys.stderr.write('.'.join(req_message.body['name']))
+        if type(req_message.body) != dict:
+            logger.info(f' req not dict: {type(req_message.body)}')
+            return
         handler = self.handlers.get('.'.join(req_message.body['name']))
         if not handler:
             logger.info(' not handler' + '.'.join(req_message.body['name']))

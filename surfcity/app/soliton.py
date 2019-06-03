@@ -2,6 +2,10 @@
 
 # surfcity/app/soliton.py
 
+# this package groups all methods linked to the local log, most importantly
+# the reading and writing (with creating a valid signature) as well as
+# encryption.
+
 import asyncio
 from   asyncio import ensure_future
 import base64
@@ -32,7 +36,12 @@ class SSB_SOLITON:
     def whoami(self):
         return self.secr.id
 
-    def wr(self, content):
+    def wr(self, content, recps_list=None):
+        if recps_list and recps_list != []:
+            box = self.secr.boxPrivateData(json.dumps(content).encode('utf8'),
+                                           recps_list)
+            content = base64.b64encode(box).decode('ascii') + '.box'
+        
         seq, key = self.db.get_id_front(self.secr.id)
         msg = config.formatMsg(key, seq+1, self.secr.id,
                           int(time.time() * 1000),
@@ -41,6 +50,7 @@ class SSB_SOLITON:
               '.sig.ed25519'
         msg = msg[:-2] + ',\n  "signature": "%s"\n}' % sig
 
+        # sanity checks before we write to the log:
         jmsg = json.loads(msg)
         if not 'author' in jmsg or not 'signature' in jmsg:
             raise ValueError
@@ -183,24 +193,6 @@ async def id_get_frontier(secr, author, out=None):
             high = seqno
     # logger.info(f" frontier: got {author} {seqno - high + low}")
     return (low, key) # seqno - high + low
-
-def msg2recps(msg, me):
-    # extract recps if msg was encrypted, return [] otherwise
-    recps = []
-    if 'private' in msg and msg['private']:
-        c = msg['content']
-        if 'recps' in c and type(c['recps']) == list:
-            for r in c['recps']:
-                if type(r) == str:
-                    recps.append(r)
-                else:
-                    recps.append('?')
-        if not msg['author'] in recps:
-            recps.append(msg['author'])
-        # if me in recps:
-        #     recps.remove(me)
-        recps.sort()
-    return recps
 
 # ----------------------------------------------------------------------
 

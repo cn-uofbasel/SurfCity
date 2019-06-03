@@ -6,7 +6,7 @@ import os
 import sys
 
 import ssb.local.config
-import surfcity.app.core as app
+import surfcity.app.core as app_core
 
 descr = "SurfCity - a log-less SSB client"
 
@@ -49,13 +49,13 @@ def main(args=None):
     paa('-pub', type=str, metavar="host:port:pubID or 'any'",
         default='127.0.0.1',
         help="access pub (default: 'localhost:8008:<yourID>')")
-    paa('-ui', choices=['urwid', 'urwid_light',
+    paa('-ui', choices=['urwid_dark', 'urwid_light',
                         'urwid_amber', 'urwid_green', 'urwid_mono',
                         'tty', 'kivy'],
-        nargs='?', metavar="USERINTERFACE", default='urwid',
-        help='one of: urwid, tty, kivy, urwid_light, urwid_amber, urwid_green, urwid_mono (default: urwid)')
+        nargs='?', metavar="USERINTERFACE", default='urwid_light',
+        help='one of: tty, urwid_dark, urwid_light, urwid_amber, urwid_green, urwid_mono, kivy (default: urwid_light)')
     paa('-dbg', action='store_true',
-        help="write debug information to a file 'test-XXX.txt'")
+        help="write debug information to a file 'test-XXX.log'")
 
     args = parser.parse_args()
 
@@ -63,24 +63,24 @@ def main(args=None):
 
     # get the user's id and secret from the ~/.ssb directory:
     secr = ssb.local.config.SSB_SECRET(args.secret)
-    app.init(secr)
-    app.the_db.open(args.db, secr.id)
-    id_in_db = app.the_db.get_config('id')
+    app_core.init(secr)
+    app_core.the_db.open(args.db, secr.id)
+    id_in_db = app_core.the_db.get_config('id')
     if id_in_db != secr.id:
         print()
         print(f"ID mismatch error:")
         print(f"- secret is for {secr.id}")
-        print(f"- but db was created by {id_in_db} '{app.feed2name(id_in_db)}'")
+        print(f"- but db was created by {id_in_db} '{app_core.feed2name(id_in_db)}'")
         sys.exit(0)
 
     if args.cmd:
         print()
         if args.cmd == 'stats':
             print("database stats:")
-            s = app.the_db.get_stats()
+            s = app_core.the_db.get_stats()
             print(json.dumps(s, indent=4))
             print("known pubs:")
-            for pubID, pub in app.the_db.list_pubs().items():
+            for pubID, pub in app_core.the_db.list_pubs().items():
                 print(f"  {pub['host']}:{pub['port']}:", "\n     ", pubID)
         sys.exit(0)
 
@@ -93,13 +93,13 @@ def main(args=None):
     elif args.ui == 'tty':
         import surfcity.ui.tty as ui
     elif args.ui == 'kivy':
-        app.the_db.close()
+        app_core.the_db.close()
         os.environ['KIVY_NO_ARGS'] = '1'
         import surfcity.ui.kivy as ui
 
     if args.dbg:
         logging.basicConfig(filename=f"test-{args.ui}.log",level=logging.INFO)
-    ui.launch(app, secr, args)
+    ui.launch(app_core, secr, args)
 
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

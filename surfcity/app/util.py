@@ -2,8 +2,50 @@
 
 import logging
 import re
+import time
 
-logger = logging.getLogger('ssb_app_util')
+logger = logging.getLogger('surfcity/app/util')
+
+# ----------------------------------------------------------------------
+
+def text2synopsis(txt,ascii=False):
+    txt = ' '.join(txt.split('\n'))
+    txt = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'[\1]', txt)
+    txt = re.sub(r' +', ' ', txt)
+    for c in '\r\b\f\t':
+        txt = txt.replace(c, '')
+    if ascii:
+        txt = txt.encode('ascii',errors='replace').decode()
+    return txt.strip()
+
+def utc2txt(ts, fixed_width=True):
+    now = time.time()
+    t = time.localtime(ts)
+    if now - ts < 60*60*24*180: # half a year
+        t = time.strftime("%b %e/%H:%M", t)
+    else:
+        t = time.strftime("%b %e, %Y", t)
+    return t if fixed_width else t.replace('  ', ' ')
+
+# ---------------------------------------------------------------------------
+
+def msg2recps(msg, me):
+    # extract recps if msg was encrypted, return [] otherwise
+    recps = []
+    if 'private' in msg and msg['private']:
+        c = msg['content']
+        if 'recps' in c and type(c['recps']) == list:
+            for r in c['recps']:
+                if type(r) == str:
+                    recps.append(r)
+                else:
+                    recps.append('?')
+        if not msg['author'] in recps:
+            recps.append(msg['author'])
+        # if me in recps:
+        #     recps.remove(me)
+        recps.sort()
+    return recps
 
 def lookup_recpts(secr, app, recpts):
     # recpts is a list of strings each having a single address or name.
