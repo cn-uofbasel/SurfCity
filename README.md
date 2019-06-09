@@ -5,6 +5,8 @@ A family of Python clients for Secure Scuttlebutt
 - handling of network disconnection
 - log extension code: staging to the SQlite DB first
 - more thorough testing of log extension code (incl signing)
+- minimal support for 'use-SSB-secret-across-multiple-devices'
+- make TTY version fully line-terminal (without ```less``` etc)
 
 ## Context and Prerequisits
 
