@@ -20,7 +20,7 @@ import surfcity.app.net  as net
 import surfcity.app.util as util
 
 logger = logging.getLogger('surfcity_ui_urwid')
-ui_descr = "SurfCity/XTERM v2019-07-06"
+ui_descr = "SurfCity/terminal v2019-07-06"
 
 the_loop = None # urwid loop
 

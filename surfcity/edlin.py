@@ -4,20 +4,64 @@
 # (c) 2019 <christian.tschudin@unibas.ch>
 
 import re
+import sys
+import termios
+import tty
+
+
+def get_input(prompt, eol=False):
+    print(prompt, end='')
+    cmd = ''
+    while True:
+        sys.stdout.flush()
+        c = sys.stdin.read(1)
+        if c in "\n\r":
+            print()
+            return cmd
+        if ord(c) in [8, 127]:
+            if len(cmd) > 0:
+                print('\x08 \x08', end='')
+            cmd = cmd[:-1]
+            continue
+        cmd += c
+        if c.isnumeric() or c == ',':
+            print(c, end='')
+            continue
+        if not eol:
+            print(c)
+            return cmd
+        print(c, end='')
+
+term_settings = None
+
+def input_prepare():
+    global term_settings
+    fd = sys.stdin.fileno()
+    term_settings = termios.tcgetattr(fd)
+    tty.setcbreak(fd, termios.TCSADRAIN)
+    new = termios.tcgetattr(fd)
+    new[1] |= termios.OPOST | termios.ONLCR
+    termios.tcsetattr(fd, termios.TCSADRAIN, new)
+
+def input_reset():
+    global term_settings
+    termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, term_settings)
+
 
 def editor(lines):
     # expects an array of lines, returns an array of lines if modified else None
     modif = False
     curr = 0
     print(f"EDLIN: loading {len(lines)} line(s), current line is {curr+1}")
+    input_prepare()
     while True:
-        cmd = input('*')
+        cmd = get_input('*')
         if len(cmd) == 0:
             if curr >= len(lines): print("no line to edit")
             else:
                 print(f"replace line {curr+1} (type <enter> to keep the line as is):")
                 print(lines[curr])
-                ln = input()
+                ln = get_input('', True)
                 if ln != '':
                     lines[curr] = ln
                     modif = True
@@ -51,11 +95,14 @@ def editor(lines):
             continue
         if cmd == 'q':
             if modif:
-                cmd = input("there are changes: really quit? y/n [N]:")
+                cmd = get_input("there are changes: really quit? y/n [N]: ")
                 if cmd.lower() != 'y':
                     continue
+            input_reset()
             return None
-        if cmd == 'e': return lines if modif else None
+        if cmd == 'e':
+            input_reset()
+            return lines if modif else None
 
         rng = re.match(r'([0-9.]+)([^0-9,.])|([0-9.]+),([0-9.]+)([^0-9.])', cmd)
         if rng:
@@ -97,7 +144,7 @@ def editor(lines):
             new = []
             print("enter text, terminate with a single '.' on a line")
             while True:
-                ln = input()
+                ln = get_input('', True)
                 if ln == '.': break
                 new.append(ln)
             if cmd == 'i':
@@ -120,12 +167,13 @@ def editor(lines):
             if cmd == 'p': curr = rng[1]
             continue
         if cmd[0] == 's':
-            orig = orig[orig.index('s')+1:]
+            # orig = orig[orig.index('s')+1:]
+            orig = get_input("search text: ", True)
             if not rng: rng = (0, len(lines)-1)
             for i in range(rng[0], rng[1]+1):
                 if orig in lines[i]:
                     print(f"{i+1}: {lines[i]}")
-                    cmd = input("correct entry? y/n [Y]:")
+                    cmd = get_input("correct entry? y/n [Y]: ")
                     if len(cmd) == 0 or cmd in ['y', 'Y']:
                         curr = i
                         break
