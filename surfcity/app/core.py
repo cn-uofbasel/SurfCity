@@ -130,9 +130,12 @@ def process_msg(msg, me, backwards=False):
     global new_friends_flag
 
     msg['this'] = msg['author'] + ':' + str(msg['sequence'])
+    logger.info(f"proc {msg['this']} key={msg['key']}")
     if type(msg['content']) != dict:
+        logger.info(f"msg {msg['this']}: content type is {type(msg['content'])}")
+        logger.info(f"  {str(msg)}")
         return
-    logger.debug(f"process_msg {msg['this']}")
+    logger.info(f"process_msg {msg['this']}")
     t = msg['content']['type']
     cutoff = int(time.time()) - frontier_window
     if  t == 'post':
@@ -195,11 +198,13 @@ def process_msg(msg, me, backwards=False):
             update_about_name(a, named=msg['content']['name'])
     elif t == 'contact' and not 'pub' in msg['content'] and \
          'contact' in msg['content'] and type(msg['content']['contact']) == str:
+        logger.info(f"  msg <{msg['author']},{msg['sequence']}> is contact")
         c = msg['content']
         if 'blocking' in c and c['blocking']:
             the_db.update_follow(msg['author'], c['contact'], 2, backwards)
         elif 'following' in c:
             if c['following']:
+                logger.info(f"  adding {c['contact']} to be followed")
                 if not new_friends_flag and msg['author'] == me:
                     if not backwards or not c['contact'] in \
                                                     the_db.get_following(me):
@@ -212,7 +217,9 @@ def process_msg(msg, me, backwards=False):
     elif t == 'pub' and msg['author'] == me and 'address' in msg['content']:
         a = msg['content']['address']
         the_db.add_pub(a['key'], a['host'], a['port'])
-    
+    else:
+        logger.info(f"  msg <{msg['author']},{msg['sequence']}> ignored")
+        
 # ----------------------------------------------------------------------
 
 async def scan_my_log(secr, args, out=None, ntfy=None):
@@ -252,9 +259,11 @@ async def scan_my_log(secr, args, out=None, ntfy=None):
         msgs.reverse()
         # ts = None
         for msg in msgs:
+            logger.info(f"ingesting own msg #{msg['sequence']}")
             # if not ts:
             #     ts = msg['timestamp']
             if not msg_ingested(msg, secr.id, backwards=True):
+                logger.info(f"  msg #{msg['sequence']} NOT ingested")
                 continue
             counter_add(1,0,ntfy)
             cnt += 1

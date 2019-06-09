@@ -1,6 +1,11 @@
 # SurfCity
 A family of Python clients for Secure Scuttlebutt
 
+2019-06-09: not ready yet for distribution, because it lacks:
+- handling of network disconnection
+- log extension code: staging to the SQlite DB first
+- more thorough testing of log extension code (incl signing)
+
 ## Context and Prerequisits
 
 SurfCity is a family of Python-based chat clients for Secure Scuttlebutt

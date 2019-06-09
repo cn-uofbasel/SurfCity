@@ -47,7 +47,7 @@ class UnboxStream(object):
             return None
         try:
             data = await self.reader.readexactly(HEADER_LENGTH)
-        except IncompleteReadError:
+        except: #  IncompleteReadError:
             self.closed = True
             return None
 
@@ -72,7 +72,10 @@ class UnboxStream(object):
     @async_generator
     async def __aiter__(self):
         while True:
-            data = await self.read()
+            try:
+                data = await self.read()
+            except:
+                return
             if data is None:
                 return
             await yield_(data)

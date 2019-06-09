@@ -20,7 +20,7 @@ import surfcity.app.net  as net
 import surfcity.app.util as util
 
 logger = logging.getLogger('surfcity_ui_urwid')
-ui_descr = " (urwid ui, v2019-06-02)"
+ui_descr = "SurfCity/XTERM v2019-07-06"
 
 the_loop = None # urwid loop
 
@@ -236,19 +236,16 @@ async def connectivity_manager(secr, args):
         output_log("Connected, scanning will start soon ...")
         ensure_future(api)
 
-        try:
-            await surf_core.scan_my_log(secr, args, output_log, output_counter)
-            if not args.noextend:
-                await surf_core.process_new_friends(secr, output_log, output_counter)
-        except Exception as e:
-            logger.info("exc while connecting: " + str(e))
-            logger.info(traceback.format_exc())
+        #except Exception as e:
+        #    logger.info("exc while connecting: " + str(e))
+        #    logger.info(traceback.format_exc())
 
 async def main(secr, args):
     global widgets4threadList, widgets4convoList, error_message
     global draft_text, draft_private_text, draft_private_recpts
     global connect_status
     # global refresh_requested #, new_friends_flag
+    updated_myself = False
 
     draft_text = surf_core.the_db.get_config('draft_post')
     priv = surf_core.the_db.get_config('draft_private_post')
@@ -281,10 +278,16 @@ async def main(secr, args):
 
         while True:
             if connect_status == "Online":
-                logger.info(f"surfcity {str(time.ctime())} before wavefront")
-                await surf_core.scan_wavefront(secr.id, secr, args,
+                if not updated_myself:
+                    await surf_core.scan_my_log(secr, args, output_log, output_counter)
+                    if not args.noextend:
+                        await surf_core.process_new_friends(secr, output_log, output_counter)
+                    updated_myself = True
+                else:
+                    logger.info(f"surfcity {str(time.ctime())} before wavefront")
+                    await surf_core.scan_wavefront(secr.id, secr, args,
                                          output_log, output_counter)
-                logger.info(f"surfcity {str(time.ctime())} after wavefront")
+                    logger.info(f"surfcity {str(time.ctime())} after wavefront")
             if surf_core.refresh_requested:
                 if urwid_frame.contents['body'][0] == urwid_threadList:
                     output_log("Preparing public content list...")
@@ -1108,7 +1111,7 @@ class ThreadListBox(urwid.ListBox):
         if key in ['p', 'P']:
             return activate_convoList(self.secr, True)
         if key in ['c']:
-            e = EditDialog(f"Compose PUBLIC message in new thread")
+            e = EditDialog(self.secr, f"Compose PUBLIC message in new thread")
             c = ConfirmTextDialog(False)
             e.open(draft_text, lambda txt: c.open(txt, None,
                            lambda : e.reopen(),

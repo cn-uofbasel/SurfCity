@@ -49,17 +49,17 @@ def main(args=None):
     paa('-pub', type=str, metavar="host:port:pubID or 'any'",
         default='127.0.0.1',
         help="access pub (default: 'localhost:8008:<yourID>')")
-    paa('-ui', choices=['urwid_dark', 'urwid_light',
-                        'urwid_amber', 'urwid_green', 'urwid_mono',
+    paa('-ui', choices=['terminal_dark', 'terminal_light',
+                        'terminal_amber', 'terminal_green', 'terminal_mono',
                         'tty', 'kivy'],
-        nargs='?', metavar="USERINTERFACE", default='urwid_light',
-        help='one of: tty, urwid_dark, urwid_light, urwid_amber, urwid_green, urwid_mono, kivy (default: urwid_light)')
+        nargs='?', metavar="USERINTERFACE", default='terminal_light',
+        help='one of: tty, terminal_dark, terminal_light, terminal_amber, terminal_green, terminal_mono, kivy (default: terminal_light)')
     paa('-dbg', action='store_true',
         help="write debug information to a file 'test-XXX.log'")
 
     args = parser.parse_args()
 
-    print(descr, end='', flush=True)
+    # print(descr, end='', flush=True)
 
     # get the user's id and secret from the ~/.ssb directory:
     secr = ssb.local.config.SSB_SECRET(args.secret)
@@ -84,12 +84,12 @@ def main(args=None):
                 print(f"  {pub['host']}:{pub['port']}:", "\n     ", pubID)
         sys.exit(0)
 
-    if 'urwid' in args.ui:
+    if 'terminal' in args.ui:
         import surfcity.ui.urwid as ui
         if '_' in args.ui:
             setattr(args, 'style', args.ui[args.ui.index('_') + 1:])
         else:
-            setattr(args, 'style', 'dark')
+            setattr(args, 'style', 'light')
     elif args.ui == 'tty':
         import surfcity.ui.tty as ui
     elif args.ui == 'kivy':
