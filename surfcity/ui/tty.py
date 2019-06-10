@@ -195,7 +195,10 @@ class Keyboard:
     def _upcall(self):
         asyncio.ensure_future(self.q.put(sys.stdin.read()), loop=self.loop)
 
-    async def getcmd(self):
+    async def getcmd(self, prompt=None):
+        if prompt:
+            print(prompt, end='')
+            sys.stdout.flush()
         cmd = await self.q.get()
         if len(cmd) == 1:
             if cmd in ['\r', '\n']:
@@ -337,9 +340,9 @@ async def aux_get_recpts(secr):
                 if cmd.lower() in ['e', 'enter']:
                     break
             print("starting the line editor ...")
-            kbd.pause()
-            new = surfcity.edlin.editor(both)
-            kbd.resume()
+            # kbd.pause()
+            new = await surfcity.edlin.editor(both)
+            # kbd.resume()
             if new:
                 save_draft(draft_private_text, new)
             continue
@@ -352,9 +355,9 @@ async def aux_get_recpts(secr):
         if cmd.lower() in ['e', 'enter']:
             print("\nstarting the line editor ...")
             new = util.expand_recpts(app, draft_private_recpts)
-            kbd.pause()
-            new = surfcity.edlin.editor()
-            kbd.resume()
+            # kbd.pause()
+            new = await surfcity.edlin.editor()
+            # kbd.resume()
             if new:
                 save_draft(draft_private_text, new)
             continue
@@ -388,9 +391,9 @@ async def aux_get_body(title, recpts=None, is_private=False):
             return None
         if cmd.lower() in ['e', 'enter']:
             print("\nstarting the line editor ...")
-            kbd.pause()
-            new = surfcity.edlin.editor(body.split('\n'))
-            kbd.resume()
+            # kbd.pause()
+            new = await surfcity.edlin.editor(body.split('\n'))
+            # kbd.resume()
             if new != None:
                 body = '\n'.join(new)
                 save_draft(body, draft_private_recpts if is_private else None)
@@ -462,9 +465,10 @@ async def cmd_compose(secr, args, list_state):
                     return
                 if cmd.lower() in ['e', 'enter']:
                     print("\nstarting the line editor ...")
-                    kbd.pause()
-                    new = surfcity.edlin.editor(body.split('\n'))
-                    kbd.resume()
+                    # kbd.pause()
+                    new = await surfcity.edlin.editor(body.split('\n'),
+                                                      kbd.getcmd)
+                    # kbd.resume()
                     if new != None:
                         body = '\n'.join(new)
                         save_draft(body)

@@ -45,7 +45,7 @@ async def editor(lines, getcmd = None):
             else:
                 print(f"replace line {curr+1} (type <enter> to keep the line as is):")
                 print(lines[curr])
-                ln = await get_input('', True)
+                ln = await get_input('', True, getcmd=getcmd)
                 if ln != '':
                     lines[curr] = ln
                     modif = True
@@ -79,13 +79,12 @@ async def editor(lines, getcmd = None):
             continue
         if cmd == 'q':
             if modif:
-                cmd = await get_input("there are changes: really quit? y/n [N]: ")
+                cmd = await get_input("there are changes: really quit? y/n [N]: ",
+                                      getcmd=getcmd)
                 if cmd.lower() != 'y':
                     continue
-            input_reset()
             return None
         if cmd == 'e':
-            input_reset()
             return lines if modif else None
 
         rng = re.match(r'([0-9.]+)([^0-9,.])|([0-9.]+),([0-9.]+)([^0-9.])', cmd)
@@ -130,7 +129,7 @@ async def editor(lines, getcmd = None):
             new = []
             print("enter text, terminate with a single '.' on a line")
             while True:
-                ln = await get_input('', True)
+                ln = await get_input('', True, getcmd=getcmd)
                 if ln == '.': break
                 new.append(ln)
             if cmd == 'i':
@@ -155,12 +154,13 @@ async def editor(lines, getcmd = None):
             continue
         if cmd[0] == 's':
             # orig = orig[orig.index('s')+1:]
-            orig = await get_input("search text: ", True)
+            orig = await get_input("search text: ", True, getcmd=getcmd)
             if not rng: rng = (0, len(lines)-1)
             for i in range(rng[0], rng[1]+1):
                 if orig in lines[i]:
                     print(f"{i+1}: {lines[i]}")
-                    cmd = await get_input("correct entry? y/n [Y]: ")
+                    cmd = await get_input("correct entry? y/n [Y]: ",
+                                          getcmd=getcmd)
                     if len(cmd) == 0 or cmd in ['y', 'Y']:
                         curr = i
                         break
