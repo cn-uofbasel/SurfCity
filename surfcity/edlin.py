@@ -3,22 +3,23 @@
 # partial implementation of EDLIN
 # (c) 2019 <christian.tschudin@unibas.ch>
 
+import asyncio
 import re
 import sys
-import termios
-import tty
 
-
-def get_input(prompt, eol=False):
+async def get_input(prompt, eol=False, getcmd=None):
     print(prompt, end='')
     cmd = ''
     while True:
         sys.stdout.flush()
-        c = sys.stdin.read(1)
-        if c in "\n\r":
+        if getcmd:
+            c = await getcmd()
+        else:
+            c = sys.stdin.read(1)
+        if c in ['\n', '\r', 'enter']:
             print()
             return cmd
-        if ord(c) in [8, 127]:
+        if c == 'del' or ord(c) in [8, 127]:
             if len(cmd) > 0:
                 print('\x08 \x08', end='')
             cmd = cmd[:-1]
@@ -32,36 +33,19 @@ def get_input(prompt, eol=False):
             return cmd
         print(c, end='')
 
-term_settings = None
-
-def input_prepare():
-    global term_settings
-    fd = sys.stdin.fileno()
-    term_settings = termios.tcgetattr(fd)
-    tty.setcbreak(fd, termios.TCSADRAIN)
-    new = termios.tcgetattr(fd)
-    new[1] |= termios.OPOST | termios.ONLCR
-    termios.tcsetattr(fd, termios.TCSADRAIN, new)
-
-def input_reset():
-    global term_settings
-    termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, term_settings)
-
-
-def editor(lines):
+async def editor(lines, getcmd = None):
     # expects an array of lines, returns an array of lines if modified else None
     modif = False
     curr = 0
     print(f"EDLIN: loading {len(lines)} line(s), current line is {curr+1}")
-    input_prepare()
     while True:
-        cmd = get_input('*')
+        cmd = await get_input('*', getcmd=getcmd)
         if len(cmd) == 0:
             if curr >= len(lines): print("no line to edit")
             else:
                 print(f"replace line {curr+1} (type <enter> to keep the line as is):")
                 print(lines[curr])
-                ln = get_input('', True)
+                ln = await get_input('', True)
                 if ln != '':
                     lines[curr] = ln
                     modif = True
@@ -95,7 +79,7 @@ def editor(lines):
             continue
         if cmd == 'q':
             if modif:
-                cmd = get_input("there are changes: really quit? y/n [N]: ")
+                cmd = await get_input("there are changes: really quit? y/n [N]: ")
                 if cmd.lower() != 'y':
                     continue
             input_reset()
@@ -117,6 +101,8 @@ def editor(lines):
                 a = curr if rng.group(3) == '.' else int(rng.group(3))-1
                 b = curr if rng.group(4) == '.' else int(rng.group(4))-1
                 rng = ( a, b )
+            if len(lines) > 0 and rng[1] >= len(lines):
+                rng = (rng[0], len(lines)-1)
             if rng[0] < 0 or rng[1] < 0 or rng[0] > rng[1]:
                 print("invalid range")
                 continue
@@ -144,7 +130,7 @@ def editor(lines):
             new = []
             print("enter text, terminate with a single '.' on a line")
             while True:
-                ln = get_input('', True)
+                ln = await get_input('', True)
                 if ln == '.': break
                 new.append(ln)
             if cmd == 'i':
@@ -161,19 +147,20 @@ def editor(lines):
             if len(new) > 0: modif = True
             continue
         if cmd in ['l', 'p']:
-            if not rng: rng = (curr, len(lines)-1)
+            if not rng:
+                rng = (curr, len(lines)-1)
             for i in range(rng[0], rng[1]+1):
                 print(f"{i+1}: {lines[i]}")
             if cmd == 'p': curr = rng[1]
             continue
         if cmd[0] == 's':
             # orig = orig[orig.index('s')+1:]
-            orig = get_input("search text: ", True)
+            orig = await get_input("search text: ", True)
             if not rng: rng = (0, len(lines)-1)
             for i in range(rng[0], rng[1]+1):
                 if orig in lines[i]:
                     print(f"{i+1}: {lines[i]}")
-                    cmd = get_input("correct entry? y/n [Y]: ")
+                    cmd = await get_input("correct entry? y/n [Y]: ")
                     if len(cmd) == 0 or cmd in ['y', 'Y']:
                         curr = i
                         break
@@ -186,17 +173,44 @@ def editor(lines):
 if __name__ == '__main__':
 
     import sys
+    import termios
+    import tty
 
+    term_settings = None
+
+    def input_prepare():
+        global term_settings
+        fd = sys.stdin.fileno()
+        term_settings = termios.tcgetattr(fd)
+        tty.setcbreak(fd, termios.TCSADRAIN)
+        new = termios.tcgetattr(fd)
+        new[1] |= termios.OPOST | termios.ONLCR
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
+
+    def input_reset():
+        global term_settings
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, term_settings)
+
+    async def main(fn):
+        with open(fn, 'r') as f: buf = f.read()
+        buf = buf[:-1] if len(buf) > 0 and buf[-1] == '\n' else buf
+        try:
+            input_prepare()
+            new = await editor([] if buf == '' else buf.split('\n'))
+            if new != None:
+                buf = '' if new == [] else '\n'.join(new) + '\n'
+                with open(fn, 'w') as f: f.write(buf)
+                print(f"New content: {len(new)} line(s) written to {fn}")
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        finally:
+            input_reset()
+    
     if len(sys.argv) != 2:
         print(f"useage: {sys.argv[0]} <filename>")
     else:
-        fn = sys.argv[1]
-        with open(fn, 'r') as f: buf = f.read()
-        buf = buf[:-1] if len(buf) > 0 and buf[-1] == '\n' else buf
-        new = editor([] if buf == '' else buf.split('\n'))
-        if new != None:
-            buf = '' if new == [] else '\n'.join(new) + '\n'
-            with open(fn, 'w') as f: f.write(buf)
-            print(f"New content: {len(new)} line(s) written to {fn}")
+        the_loop = asyncio.get_event_loop()
+        the_loop.run_until_complete(main(sys.argv[1]))
 
 # eof
