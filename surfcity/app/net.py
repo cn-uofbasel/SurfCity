@@ -70,6 +70,8 @@ def disconnect():
 async def get_msgs(msgName, limit=1):
     # print(f"me requesting msg {msgName}..")
     # msgs = []
+    if api.connection == None:
+        return
     async for reply in api.call('createHistoryStream', [{
             'id': msgName[0],
             'seq': msgName[1],

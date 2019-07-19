@@ -265,9 +265,9 @@ def render_lines(lns, at_bottom=True):
         # subprocess.run(f"less -c -h0 -S +G {f.name}; tput rmcup ", shell=True, executable='/bin/bash')
         scrn = '' # "echo '\x1b[!p\x1b[?1049h\x1b[!p';" # \x1b[1;45r'; "
         if at_bottom:
-            cmd = scrn + f"less -c -h0 -S +G -R {f.name}"
+            cmd = scrn + f"clear; more -n 10 {f.name}" # f"less -c -h0 -S +G -R {f.name}"
         else:
-            cmd = scrn + f"less -c -h0 -S -R {f.name}"
+            cmd = scrn + f"clear; more -n 10 {f.name}" # f"less -c -h0 -S -R {f.name}"
         subprocess.run(cmd, shell=True, start_new_session=True)
         # subprocess.run(["stty", "sane"])
         # subprocess.run(["tput", "rs1"])
@@ -528,7 +528,7 @@ async def cmd_enter(secr, args, list_state):
                 "'<' to jump to the beginning, " + \
                 "'>' to jump to the end]"
     txt = [""]
-    txt += my_format(help_text, 'center')
+    # txt += my_format(help_text, 'center')
     txt += my_format("---oldest---", 'center')
 
     if list_state['show'] == 'Public':
@@ -554,7 +554,7 @@ async def cmd_enter(secr, args, list_state):
 
     txt += [""]
     txt += my_format("---newest---", 'center')
-    txt += my_format(help_text, 'center')
+    # txt += my_format(help_text, 'center')
     txt += ["\n"]
     render_lines(txt)
 
@@ -789,7 +789,7 @@ async def cmd_userdir(secr, args, list_state):
         if f in pubs:
             t.append(user2line(f, f in frnd))
     t.sort(key=lambda x:x[2:].lower())
-    t = [f"Accredited pubs: {len(pubs)}\n"] + t
+    t = [f"Accredited pubs: {len(t)}\n"] + t
     #if len(t) > 1:
     #    t.append('')
     lines.append('\n'.join(t))
@@ -807,7 +807,7 @@ async def cmd_userdir(secr, args, list_state):
             t1.append(ln)
     t1.sort(key=lambda x:x[2:].lower())
     t2.sort(key=lambda x:x[2:].lower())
-    t = [f"Followed feeds (* =friend/following back): {len(fol)-len(pubs)}\n"] + t1 + t2
+    t = [f"Followed feeds (* =friend/following back): {len(t1)+len(t2)}\n"] + t1 + t2
     # if len(t) > 1:
     #     t.append('')
     lines.append('\n'.join(t))
@@ -940,7 +940,8 @@ async def main(kbd, secr, args):
         net.init(secr.id, send_queue)
         if not args.offline:
             host = args.pub.split(':')
-            if len(host) == 1:
+            print(host)
+            if len(host) == 1 and not host[0] in ['localhost', '127.0.0.1']:
                 pattern = host[0]
                 pubs = app.the_db.list_pubs()
                 for pubID in pubs:

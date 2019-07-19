@@ -47,7 +47,7 @@ def main(args=None):
         default=os.path.expanduser('~/.ssb/surfcity.sqlite'),
         help="SurfCity's database (default: ~/.ssb/surfcity.sqlite)")
     paa('-pub', type=str, metavar="host:port:pubID or 'any'",
-        default='127.0.0.1',
+        default='localhost',
         help="access pub (default: 'localhost:8008:<yourID>')")
     paa('-ui', choices=['terminal_dark', 'terminal_light',
                         'terminal_amber', 'terminal_green', 'terminal_mono',
